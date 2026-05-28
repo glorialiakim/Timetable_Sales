@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>리그 시간표 생성기</title>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/exceljs@4.4.0/dist/exceljs.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: 'Malgun Gothic', '맑은 고딕', sans-serif;
+            background: #f0f2f5;
+            color: #333;
+            min-height: 100vh;
+        }
+        .container { max-width: 1300px; margin: 0 auto; padding: 24px; }
+        .page-title {
+            text-align: center;
+            font-size: 26px;
+            font-weight: bold;
+            margin-bottom: 24px;
+            color: #1a1a1a;
+        }
+        .card {
+            background: white;
+            border-radius: 10px;
+            padding: 24px;
+            margin-bottom: 20px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+        }
+        .card-title {
+            font-size: 17px;
+            font-weight: bold;
+            margin-bottom: 16px;
+            color: #1a1a1a;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #eee;
+        }
+        .settings-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+        }
+        .field { display: flex; flex-direction: column; gap: 6px; }
+        .field label { font-size: 13px; font-weight: 600; color: #555; }
+        input, select {
+            padding: 8px 12px;
+            border: 1px solid #d0d0d0;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+            transition: border-color 0.2s;
+        }
+        input:focus, select:focus {
+            outline: none;
+            border-color: #4a90d9;
+            box-shadow: 0 0 0 2px rgba(74,144,217,0.15);
+        }
+        input[type="number"] { width: 90px; }
+        input[type="time"] { width: 130px; }
+
+        .upload-area {
+            border: 2px dashed #c0c0c0;
+            border-radius: 10px;
+            padding: 36px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.2s;
+            background: #fafbfc;
+        }
+        .upload-area:hover { border-color: #4a90d9; background: #f0f6ff; }
+        .upload-area.dragover { border-color: #4a90d9; background: #e8f0fe; }
+        .upload-area .main-text { font-size: 16px; color: #444; margin-bottom: 6px; }
+        .upload-area .sub-text { font-size: 13px; color: #999; }
+        .upload-area .file-loaded { color: #2e7d32; font-weight: bold; }
+
+        .btn {
+            padding: 9px 22px;
+            border: none;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 600;
+            font-family: inherit;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .btn:active { transform: scale(0.97); }
+        .btn-primary { background: #4a90d9; color: white; }
+        .btn-primary:hover { background: #3a7bc8; }
+        .btn-green { background: #43a047; color: white; }
+        .btn-green:hover { background: #388e3c; }
+        .btn-outline { background: white; color: #555; border: 1px solid #ccc; }
+        .btn-outline:hover { background: #f5f5f5; }
+        .btn-danger { background: #e53935; color: white; }
+        .btn-danger:hover { background: #c62828; }
+        .btn-sm { padding: 5px 12px; font-size: 12px; }
+        .btn-row {
+            display: flex;
+            gap: 10px;
+            justify-content: center;
+            margin-top: 16px;
+            flex-wrap: wrap;
+        }
+
+        .break-inputs {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            margin-top: 12px;
+            padding: 12px;
+            background: #f8f9fa;
+            border-radius: 6px;
+        }
+        .break-input-item {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 13px;
+        }
+        .break-input-item label { font-weight: 600; color: #555; white-space: nowrap; }
+        .break-input-item input { width: 70px; }
+
+        .section-config-item {
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            padding: 14px 16px;
+            margin-bottom: 10px;
+            background: #fcfcfc;
+        }
+        .section-config-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .section-config-header h3 {
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        .badge {
+            background: #e3e8ef;
+            padding: 2px 10px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: normal;
+            color: #555;
+        }
+        .section-detail {
+            margin-top: 10px;
+            padding-top: 10px;
+            border-top: 1px solid #eee;
+            display: none;
+        }
+        .section-detail.open { display: block; }
+        .section-settings-row {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+            align-items: end;
+            margin-bottom: 8px;
+        }
+        .color-dot {
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .toggle-detail {
+            background: none;
+            border: none;
+            cursor: pointer;
+            color: #888;
+            font-size: 12px;
+            padding: 2px 6px;
+        }
+        .toggle-detail:hover { color: #333; }
+
+        .entries-list { max-height: 180px; overflow-y: auto; margin-top: 6px; }
+        .entry-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 3px 8px;
+            font-size: 12px;
+            border-bottom: 1px solid #f0f0f0;
+        }
+        .entry-row:hover { background: #fafafa; }
+        .entry-row .entry-info { display: flex; gap: 14px; }
+        .entry-row .entry-num { color: #999; width: 22px; }
+
+        .move-btns { display: flex; gap: 2px; }
+        .move-btns button {
+            background: none;
+            border: 1px solid #ddd;
+            border-radius: 3px;
+            cursor: pointer;
+            padding: 2px 6px;
+            font-size: 11px;
+            color: #666;
+        }
+        .move-btns button:hover { background: #eee; }
+
+        .break-marker {
+            text-align: center;
+            padding: 4px 0;
+            font-size: 12px;
+            color: #e65100;
+            font-weight: 600;
+        }
+
+        .warning-banner {
+            background: #fff3e0;
+            border: 1px solid #ffb74d;
+            border-radius: 8px;
+            padding: 12px 16px;
+            margin-bottom: 16px;
+            color: #e65100;
+            font-size: 14px;
+            font-weight: 600;
+        }
+
+        .timetable-output { background: white; border-radius: 10px; padding: 30px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); }
+        .timetable-title-text {
+            text-align: center;
+            font-size: 22px;
+            font-weight: bold;
+            margin-bottom: 24px;
+            color: #1a1a1a;
+        }
+        .timetable-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 20px;
+            align-items: start;
+        }
+        .tt-section { margin-bottom: 0; }
+        .tt-section table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12.5px;
+        }
+        .tt-section th, .tt-section td {
+            border: 1px solid #444;
+            padding: 4px 7px;
+            text-align: center;
+            white-space: nowrap;
+        }
+        .tt-section th { font-weight: bold; font-size: 12px; }
+        .tt-section td { font-size: 12px; }
+
+        .hdr-green th { background: #92D050; color: #1a1a1a; }
+        .hdr-blue th { background: #BDD7EE; color: #1a1a1a; }
+        .hdr-orange th { background: #F4B084; color: #1a1a1a; }
+        .hdr-purple th { background: #D5A6E6; color: #1a1a1a; }
+
+        .break-row td {
+            background: #f0f0f0;
+            font-weight: bold;
+            color: #666;
+        }
+        .actions-bar {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
+        .summary-bar {
+            display: flex;
+            gap: 20px;
+            flex-wrap: wrap;
+            padding: 10px 14px;
+            background: #f0f4f8;
+            border-radius: 6px;
+            margin-top: 12px;
+            font-size: 13px;
+        }
+        .summary-item { display: flex; gap: 6px; }
+        .summary-item .s-label { color: #777; }
+        .summary-item .s-value { font-weight: 700; }
+        .summary-item .s-value.over { color: #e53935; }
+
+        @media print {
+            body { background: white; }
+            .no-print { display: none !important; }
+            .timetable-output { box-shadow: none; padding: 10px; margin: 0; }
+            .container { max-width: 100%; padding: 0; }
+            .timetable-grid { gap: 12px; }
+            .tt-section th, .tt-section td { font-size: 11px; padding: 3px 5px; }
+            @page { size: landscape; margin: 15mm; }
+        }
+        @media (max-width: 768px) {
+            .timetable-grid { grid-template-columns: 1fr; }
+            .settings-grid { grid-template-columns: 1fr 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="page-title">리그 시간표 생성기</div>
+
+        <!-- 기본 설정 -->
+        <div class="card no-print">
+            <div class="card-title">기본 설정</div>
+            <div class="settings-grid">
+                <div class="field">
+                    <label>리그 유형</label>
+                    <select id="leagueType">
+                        <option value="sales">영업리그</option>
+                        <option value="task">과제리그</option>
+                        <option value="both">영업리그 + 과제리그</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label>날짜</label>
+                    <input type="date" id="leagueDate">
+                </div>
+                <div class="field">
+                    <label>시작 시간</label>
+                    <input type="time" id="globalStartTime" value="11:00">
+                </div>
+                <div class="field">
+                    <label>종료 시간 (최대)</label>
+                    <input type="time" id="globalEndTime" value="17:00">
+                </div>
+                <div class="field">
+                    <label>배정 시간 (분)</label>
+                    <input type="number" id="defaultSlotMin" value="10" min="1" max="60">
+                </div>
+            </div>
+        </div>
+
+        <!-- 휴식 설정 -->
+        <div class="card no-print">
+            <div class="card-title">휴식 설정</div>
+            <div class="settings-grid" style="grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));">
+                <div class="field">
+                    <label>휴식 횟수</label>
+                    <input type="number" id="breakCount" value="3" min="0" max="10" onchange="renderBreakInputs()">
+                </div>
+                <div class="field">
+                    <label>기본 휴식 시간 (분)</label>
+                    <input type="number" id="defaultBreakMin" value="10" min="1" max="120" onchange="applyDefaultBreak()">
+                </div>
+            </div>
+            <div class="break-inputs" id="breakInputs"></div>
+        </div>
+
+        <!-- 엑셀 업로드 -->
+        <div class="card no-print">
+            <div class="card-title">엑셀 파일 업로드</div>
+            <div class="upload-area" id="uploadArea">
+                <div class="main-text" id="uploadText">엑셀 파일을 여기에 드래그하거나 클릭하여 업로드</div>
+                <div class="sub-text">.xlsx, .xls 파일 지원 (섹션, 구분, 발표자, 방식)</div>
+                <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" style="display:none">
+            </div>
+            <div class="btn-row">
+                <button class="btn btn-outline" onclick="downloadTemplate()">템플릿 다운로드</button>
+                <button class="btn btn-outline" onclick="loadSampleData()">예시 데이터 불러오기</button>
+            </div>
+        </div>
+
+        <!-- 섹션 미리보기 + 재생성 -->
+        <div class="card no-print" id="sectionsCard" style="display:none">
+            <div class="card-title">
+                섹션 구성
+                <span style="font-weight:normal; font-size:13px; color:#888; margin-left:8px;">
+                    순서 변경, 섹션별 배정시간 조정 가능
+                </span>
+            </div>
+            <div id="sectionsList"></div>
+            <div id="summaryBar"></div>
+            <div class="btn-row" style="margin-top:16px">
+                <button class="btn btn-green" onclick="generateTimetable()" style="padding:12px 40px; font-size:16px;">
+                    시간표 생성
+                </button>
+            </div>
+        </div>
+
+        <!-- 결과 -->
+        <div id="outputArea" style="display:none">
+            <div class="actions-bar no-print">
+                <button class="btn btn-outline" onclick="window.print()">인쇄</button>
+                <button class="btn btn-outline" onclick="exportToExcel()">엑셀로 내보내기</button>
+                <button class="btn btn-primary" onclick="generateTimetable()">다시 생성</button>
+            </div>
+            <div id="warningArea"></div>
+            <div class="timetable-output" id="timetableOutput"></div>
+        </div>
+    </div>
+
+<script>
+const SECTION_COLORS = ['hdr-green', 'hdr-blue', 'hdr-orange', 'hdr-purple'];
+const COLOR_HEX = ['#92D050', '#BDD7EE', '#F4B084', '#D5A6E6'];
+const DAY_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
+
+let sections = [];
+let breakDurations = [60, 10, 10];
+let lastComputed = [];
+
+/* ── 유틸 ── */
+function timeToMin(t) { const [h, m] = t.split(':').map(Number); return h * 60 + m; }
+function minToTime(m) { return `${String(Math.floor(m/60)).padStart(2,'0')}:${String(m%60).padStart(2,'0')}`; }
+
+function getSecondFriday(y, m) {
+    const d = new Date(y, m, 1);
+    const off = (5 - d.getDay() + 7) % 7;
+    return new Date(y, m, 1 + off + 7);
+}
+
+function initDate() {
+    const now = new Date();
+    let t = getSecondFriday(now.getFullYear(), now.getMonth());
+    if (t < now) { const n = new Date(now.getFullYear(), now.getMonth()+1, 1); t = getSecondFriday(n.getFullYear(), n.getMonth()); }
+    document.getElementById('leagueDate').value = `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`;
+}
+
+function formatDateTitle() {
+    const v = document.getElementById('leagueDate').value;
+    if (!v) return '';
+    const d = new Date(v + 'T00:00:00');
+    return `${d.getMonth()+1}월 ${d.getDate()}일 (${DAY_NAMES[d.getDay()]})`;
+}
+
+function getLeagueLabel() {
+    const v = document.getElementById('leagueType').value;
+    return v === 'sales' ? '영업리그' : v === 'task' ? '과제리그' : '영업리그 + 과제리그';
+}
+
+/* ── 휴식 설정 ── */
+function renderBreakInputs() {
+    const n = parseInt(document.getElementById('breakCount').value) || 0;
+    const def = parseInt(document.getElementById('defaultBreakMin').value) || 10;
+    while (breakDurations.length < n) breakDurations.push(def);
+    breakDurations = breakDurations.slice(0, Math.max(n, 0));
+
+    const box = document.getElementById('breakInputs');
+    if (n === 0) { box.innerHTML = '<span style="color:#999; font-size:13px;">휴식 없음</span>'; return; }
+    let html = '';
+    for (let i = 0; i < n; i++) {
+        html += `<div class="break-input-item">
+            <label>${i+1}번째 휴식</label>
+            <input type="number" value="${breakDurations[i]}" min="1" max="120"
+                onchange="breakDurations[${i}]=parseInt(this.value)">
+            <span>분</span>
+        </div>`;
+    }
+    box.innerHTML = html;
+}
+
+function applyDefaultBreak() {
+    const def = parseInt(document.getElementById('defaultBreakMin').value) || 10;
+    const n = parseInt(document.getElementById('breakCount').value) || 0;
+    breakDurations = Array(n).fill(def);
+    renderBreakInputs();
+}
+
+/* ── 휴식 자동 배치 ── */
+function distributeBreaks(numSections, numBreaks) {
+    if (numBreaks <= 0 || numSections <= 1) return [];
+    const maxB = numSections - 1;
+    const B = Math.min(numBreaks, maxB);
+    if (B === maxB) return Array.from({length: maxB}, (_, i) => i);
+    const positions = [];
+    const step = numSections / (B + 1);
+    for (let i = 1; i <= B; i++) {
+        const p = Math.round(i * step) - 1;
+        if (!positions.includes(p)) positions.push(p);
+    }
+    return positions.sort((a, b) => a - b);
+}
+
+/* ── 파일 업로드 ── */
+const uploadArea = document.getElementById('uploadArea');
+const fileInput = document.getElementById('fileInput');
+uploadArea.addEventListener('click', () => fileInput.click());
+uploadArea.addEventListener('dragover', e => { e.preventDefault(); uploadArea.classList.add('dragover'); });
+uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
+uploadArea.addEventListener('drop', e => { e.preventDefault(); uploadArea.classList.remove('dragover'); if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]); });
+fileInput.addEventListener('change', e => { if (e.target.files.length) handleFile(e.target.files[0]); });
+
+function handleFile(file) {
+    const reader = new FileReader();
+    reader.onload = e => {
+        const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+        parseWorkbook(wb);
+        document.getElementById('uploadText').innerHTML = '<span class="file-loaded">' + file.name + ' 로드 완료</span>';
+        autoGenerate();
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+function parseWorkbook(wb) {
+    const lt = document.getElementById('leagueType').value;
+    sections = [];
+    let sheetNames = [];
+    if (lt === 'sales') { sheetNames = wb.SheetNames.filter(n => n.includes('영업') || (!n.includes('과제') && wb.SheetNames.length === 1)); if (!sheetNames.length) sheetNames = [wb.SheetNames[0]]; }
+    else if (lt === 'task') { sheetNames = wb.SheetNames.filter(n => n.includes('과제')); if (!sheetNames.length) sheetNames = [wb.SheetNames[wb.SheetNames.length > 1 ? 1 : 0]]; }
+    else { sheetNames = wb.SheetNames; }
+
+    const defSlot = parseInt(document.getElementById('defaultSlotMin').value) || 10;
+
+    sheetNames.forEach(sn => {
+        const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, defval: '' });
+        if (rows.length < 2) return;
+        const colMap = detectColumns(rows[0].map(h => String(h).trim()));
+        for (let i = 1; i < rows.length; i++) {
+            const row = rows[i];
+            if (!row || row.every(c => c === '' || c == null)) continue;
+            const secName = String(colMap.section !== -1 ? row[colMap.section] : sn).trim();
+            const cat = String(colMap.category !== -1 ? row[colMap.category] : '').trim();
+            const pres = String(colMap.presenter !== -1 ? row[colMap.presenter] : '').trim();
+            const meth = String(colMap.method !== -1 ? row[colMap.method] : '').trim();
+            if (!secName && !pres) continue;
+            let sec = sections.find(s => s.name === (secName || '기타'));
+            if (!sec) { sec = { name: secName || '기타', entries: [], slotDuration: defSlot }; sections.push(sec); }
+            if (pres || cat) sec.entries.push({ category: cat, presenter: pres, method: meth });
+        }
+    });
+}
+
+function detectColumns(header) {
+    const map = { section: -1, category: -1, presenter: -1, method: -1 };
+    header.forEach((h, i) => {
+        const l = h.toLowerCase();
+        if (l.includes('섹션') || l.includes('부') || l.includes('section') || l.includes('그룹')) map.section = i;
+        else if (l.includes('구분') || l.includes('소구분') || l.includes('category') || l.includes('지역')) map.category = i;
+        else if (l.includes('발표자') || l.includes('이름') || l.includes('name') || l.includes('담당')) map.presenter = i;
+        else if (l.includes('방식') || l.includes('method') || l.includes('유형')) map.method = i;
+    });
+    if (map.section === -1 && map.category === -1 && map.presenter === -1) {
+        if (header.length >= 4) { map.section=0; map.category=1; map.presenter=2; map.method=3; }
+        else if (header.length === 3) { map.section=0; map.category=1; map.presenter=2; }
+        else if (header.length === 2) { map.category=0; map.presenter=1; }
+    }
+    return map;
+}
+
+/* ── 섹션 UI ── */
+function renderSectionConfig() {
+    const c = document.getElementById('sectionsList');
+    c.innerHTML = '';
+    const breakPos = distributeBreaks(sections.length, parseInt(document.getElementById('breakCount').value) || 0);
+
+    sections.forEach((sec, idx) => {
+        const colorHex = COLOR_HEX[idx % COLOR_HEX.length];
+        const div = document.createElement('div');
+        div.innerHTML = `
+            <div class="section-config-item">
+                <div class="section-config-header">
+                    <h3>
+                        <span class="color-dot" style="background:${colorHex}"></span>
+                        <span>${sec.name}</span>
+                        <span class="badge">${sec.entries.length}명</span>
+                        <span class="badge" style="background:#e8f5e9; color:#2e7d32;">${sec.slotDuration}분</span>
+                    </h3>
+                    <div style="display:flex; gap:4px; align-items:center;">
+                        <div class="move-btns">
+                            <button onclick="moveSection(${idx},-1)" ${idx===0?'disabled':''}>&#9650;</button>
+                            <button onclick="moveSection(${idx},1)" ${idx===sections.length-1?'disabled':''}>&#9660;</button>
+                        </div>
+                        <button class="toggle-detail" onclick="toggleDetail(${idx})">[편집]</button>
+                        <button class="btn btn-danger btn-sm" onclick="removeSection(${idx})">삭제</button>
+                    </div>
+                </div>
+                <div class="section-detail" id="detail${idx}">
+                    <div class="section-settings-row">
+                        <div class="field">
+                            <label>섹션명</label>
+                            <input type="text" value="${sec.name}" style="width:180px"
+                                onchange="sections[${idx}].name=this.value; renderSectionConfig();">
+                        </div>
+                        <div class="field">
+                            <label>배정 시간 (분)</label>
+                            <input type="number" value="${sec.slotDuration}" min="1" max="60"
+                                onchange="sections[${idx}].slotDuration=parseInt(this.value); renderSectionConfig();">
+                        </div>
+                    </div>
+                    <div class="entries-list">
+                        ${sec.entries.map((e, ei) => `
+                            <div class="entry-row">
+                                <div class="entry-info">
+                                    <span class="entry-num">${ei+1}</span>
+                                    <span style="min-width:90px">${e.category}</span>
+                                    <span style="font-weight:600">${e.presenter}</span>
+                                    <span style="color:#888">${e.method}</span>
+                                </div>
+                                <button style="background:none;border:none;cursor:pointer;color:#999;font-size:14px;"
+                                    onclick="sections[${idx}].entries.splice(${ei},1); renderSectionConfig();">x</button>
+                            </div>
+                        `).join('')}
+                    </div>
+                    <div style="margin-top:6px; display:flex; gap:6px; align-items:center;">
+                        <input type="text" placeholder="구분" id="aC${idx}" style="width:100px;padding:4px 8px;font-size:12px;">
+                        <input type="text" placeholder="발표자" id="aP${idx}" style="width:100px;padding:4px 8px;font-size:12px;">
+                        <input type="text" placeholder="방식" id="aM${idx}" style="width:80px;padding:4px 8px;font-size:12px;">
+                        <button class="btn btn-outline btn-sm" onclick="addEntry(${idx})">추가</button>
+                    </div>
+                </div>
+            </div>
+        `;
+        c.appendChild(div);
+
+        if (breakPos.includes(idx) && idx < sections.length - 1) {
+            const bIdx = breakPos.indexOf(idx);
+            const dur = bIdx < breakDurations.length ? breakDurations[bIdx] : 10;
+            const marker = document.createElement('div');
+            marker.className = 'break-marker';
+            marker.textContent = `--- ${bIdx+1}번째 휴식 (${dur}분) ---`;
+            c.appendChild(marker);
+        }
+    });
+
+    renderSummary();
+    document.getElementById('sectionsCard').style.display = sections.length ? 'block' : 'none';
+}
+
+function renderSummary() {
+    const info = calcScheduleInfo();
+    const endLimit = timeToMin(document.getElementById('globalEndTime').value || '17:00');
+    const isOver = info.endMin > endLimit;
+    document.getElementById('summaryBar').innerHTML = `
+        <div class="summary-bar">
+            <div class="summary-item"><span class="s-label">총 발표:</span><span class="s-value">${info.totalEntries}명</span></div>
+            <div class="summary-item"><span class="s-label">발표 시간:</span><span class="s-value">${info.totalPresentMin}분</span></div>
+            <div class="summary-item"><span class="s-label">휴식 시간:</span><span class="s-value">${info.totalBreakMin}분</span></div>
+            <div class="summary-item"><span class="s-label">예상 시작:</span><span class="s-value">${minToTime(info.startMin)}</span></div>
+            <div class="summary-item"><span class="s-label">예상 종료:</span><span class="s-value ${isOver?'over':''}">${minToTime(info.endMin)}${isOver ? ' (17:00 초과!)' : ''}</span></div>
+        </div>
+    `;
+}
+
+function calcScheduleInfo() {
+    const startMin = timeToMin(document.getElementById('globalStartTime').value || '11:00');
+    const breakPos = distributeBreaks(sections.length, parseInt(document.getElementById('breakCount').value) || 0);
+    let totalPresentMin = 0;
+    sections.forEach(s => { totalPresentMin += s.entries.length * s.slotDuration; });
+    let totalBreakMin = 0;
+    breakPos.forEach((_, i) => { totalBreakMin += (i < breakDurations.length ? breakDurations[i] : 10); });
+    return {
+        totalEntries: sections.reduce((a, s) => a + s.entries.length, 0),
+        totalPresentMin,
+        totalBreakMin,
+        startMin,
+        endMin: startMin + totalPresentMin + totalBreakMin
+    };
+}
+
+function toggleDetail(idx) {
+    const el = document.getElementById('detail' + idx);
+    el.classList.toggle('open');
+}
+
+function addEntry(idx) {
+    const cat = document.getElementById('aC'+idx).value.trim();
+    const pres = document.getElementById('aP'+idx).value.trim();
+    const meth = document.getElementById('aM'+idx).value.trim();
+    if (!pres && !cat) return;
+    sections[idx].entries.push({ category: cat, presenter: pres, method: meth });
+    renderSectionConfig();
+}
+
+function moveSection(idx, dir) {
+    const t = idx + dir;
+    if (t < 0 || t >= sections.length) return;
+    [sections[idx], sections[t]] = [sections[t], sections[idx]];
+    renderSectionConfig();
+}
+
+function removeSection(idx) {
+    sections.splice(idx, 1);
+    renderSectionConfig();
+}
+
+/* ── 시간표 생성 ── */
+function autoGenerate() {
+    renderSectionConfig();
+    if (sections.length && sections.some(s => s.entries.length > 0)) {
+        generateTimetable();
+    }
+}
+
+function generateTimetable() {
+    if (!sections.length || sections.every(s => s.entries.length === 0)) {
+        alert('섹션과 발표자 데이터를 먼저 입력해주세요.');
+        return;
+    }
+
+    const globalStart = timeToMin(document.getElementById('globalStartTime').value || '11:00');
+    const endLimit = timeToMin(document.getElementById('globalEndTime').value || '17:00');
+    const breakPos = distributeBreaks(sections.length, parseInt(document.getElementById('breakCount').value) || 0);
+    let currentTime = globalStart;
+    let breakIdx = 0;
+
+    const computed = sections.map((sec, idx) => {
+        const start = currentTime;
+        const slots = sec.entries.map((entry, i) => ({
+            ...entry,
+            startTime: minToTime(start + i * sec.slotDuration),
+            endTime: minToTime(start + (i + 1) * sec.slotDuration),
+            num: i + 1
+        }));
+        currentTime = start + sec.entries.length * sec.slotDuration;
+
+        let breakStart = null, breakEnd = null, hasBreak = false;
+        if (breakPos.includes(idx) && idx < sections.length - 1) {
+            const dur = breakIdx < breakDurations.length ? breakDurations[breakIdx] : 10;
+            breakStart = minToTime(currentTime);
+            breakEnd = minToTime(currentTime + dur);
+            currentTime += dur;
+            hasBreak = true;
+            breakIdx++;
+        }
+
+        return {
+            name: sec.name,
+            colorClass: SECTION_COLORS[idx % SECTION_COLORS.length],
+            colorIdx: idx % SECTION_COLORS.length,
+            slots, breakStart, breakEnd, hasBreak
+        };
+    });
+
+    const finalEnd = currentTime;
+    let warning = '';
+    if (finalEnd > endLimit) {
+        const over = finalEnd - endLimit;
+        warning = `<div class="warning-banner">종료 시간 ${minToTime(endLimit)}을 ${over}분 초과합니다. (예상 종료: ${minToTime(finalEnd)}) 배정 시간 또는 휴식을 조정하세요.</div>`;
+    }
+
+    lastComputed = computed;
+    document.getElementById('warningArea').innerHTML = warning;
+    renderOutput(computed);
+    renderSummary();
+}
+
+function renderOutput(computed) {
+    const title = `${formatDateTitle()} ${getLeagueLabel()} 명단`;
+    const output = document.getElementById('timetableOutput');
+    let html = `<div class="timetable-title-text">${title}</div><div class="timetable-grid">`;
+
+    computed.forEach(sec => {
+        html += '<div class="tt-section"><table>';
+        html += `<tr class="${sec.colorClass}"><th colspan="6" style="font-size:13px;padding:6px;">${sec.name}</th></tr>`;
+        html += `<tr class="${sec.colorClass}">
+            <th style="width:36px">번호</th><th style="width:55px">시작</th><th style="width:55px">종료</th>
+            <th>구분</th><th>발표자</th><th style="width:50px">방식</th></tr>`;
+
+        sec.slots.forEach(s => {
+            html += `<tr><td>${s.num}</td><td>${s.startTime}</td><td>${s.endTime}</td>
+                <td style="text-align:left;padding-left:8px;">${s.category}</td><td>${s.presenter}</td><td>${s.method}</td></tr>`;
+        });
+
+        if (sec.hasBreak) {
+            html += `<tr class="break-row"><td></td><td>${sec.breakStart}</td><td>${sec.breakEnd}</td><td colspan="3">쉬는시간</td></tr>`;
+        }
+        html += '</table></div>';
+    });
+
+    html += '</div>';
+    output.innerHTML = html;
+    document.getElementById('outputArea').style.display = 'block';
+    output.scrollIntoView({ behavior: 'smooth' });
+}
+
+/* ── 템플릿 / 샘플 ── */
+function downloadTemplate() {
+    const wb = XLSX.utils.book_new();
+    const data = [
+        ['섹션','구분','발표자','방식'],
+        ['2부','인도','','화상'],['2부','뉴욕','',''],['2부','아시아','',''],
+        ['집중시장, 프로젝트, CS','미국법인 컨슈머','','화상'],['집중시장, 프로젝트, CS','BWA','',''],
+        ['주재원, 3부','아시아','',''],['주재원, 3부','베트남법인','','화상'],
+        ['4부(국내)','대학교','',''],['4부(국내)','인바디존','',''],
+    ];
+    const ws = XLSX.utils.aoa_to_sheet(data);
+    ws['!cols'] = [{wch:22},{wch:22},{wch:12},{wch:8}];
+    XLSX.utils.book_append_sheet(wb, ws, '영업리그');
+    const ws2 = XLSX.utils.aoa_to_sheet([['섹션','구분','발표자','방식'],['과제1부','','','']]);
+    ws2['!cols'] = [{wch:22},{wch:22},{wch:12},{wch:8}];
+    XLSX.utils.book_append_sheet(wb, ws2, '과제리그');
+    XLSX.writeFile(wb, '리그_시간표_템플릿.xlsx');
+}
+
+function loadSampleData() {
+    const defSlot = parseInt(document.getElementById('defaultSlotMin').value) || 10;
+    sections = [
+        { name:'2부', slotDuration: defSlot, entries: [
+            {category:'인도',presenter:'차인준',method:'화상'},{category:'뉴욕',presenter:'김성은',method:'화상'},
+            {category:'아시아',presenter:'최형옥',method:'화상'},{category:'영국',presenter:'임장혁',method:'화상'},
+            {category:'호주',presenter:'김현지',method:'화상'}
+        ]},
+        { name:'집중시장, 프로젝트, CS', slotDuration: defSlot, entries: [
+            {category:'미국법인 컨슈머',presenter:'변재혁',method:'화상'},{category:'중남미/중동아프리카',presenter:'박하영',method:''},
+            {category:'강서(직영)지사',presenter:'이동우',method:''},{category:'BWA',presenter:'최민, 신희관',method:''},
+            {category:'약국/건기식',presenter:'이영원, 장환호',method:''},{category:'W',presenter:'이동은',method:''},
+            {category:'W',presenter:'양윤석',method:''},{category:'W',presenter:'이서환',method:''},
+            {category:'CS',presenter:'이지훈',method:''}
+        ]},
+        { name:'주재원, 3부', slotDuration: defSlot, entries: [
+            {category:'아시아',presenter:'영호군',method:''},{category:'베트남법인',presenter:'김시현',method:'화상'},
+            {category:'튀르키예법인',presenter:'하성봉',method:''},{category:'폴란드',presenter:'이용빈',method:''},
+            {category:'스위스',presenter:'조배근',method:''},{category:'튀르키예법인',presenter:'민들레',method:''},
+            {category:'베트남법인',presenter:'이상옥',method:'화상'},{category:'프랑스',presenter:'안영재',method:''},
+            {category:'인도네시아',presenter:'이민지',method:''},{category:'필리핀',presenter:'권해선',method:''}
+        ]},
+        { name:'4부(국내)', slotDuration: 5, entries: [
+            {category:'대학교',presenter:'김남국',method:''},{category:'인바디존',presenter:'최자은',method:''},
+            {category:'국내 아파트 공용부',presenter:'천장훈',method:''},{category:'기업',presenter:'정명',method:''},
+            {category:'BWA 국내',presenter:'윤혜린',method:''},{category:'대한체육회',presenter:'김명수',method:''}
+        ]}
+    ];
+    document.getElementById('uploadText').innerHTML = '<span class="file-loaded">예시 데이터 로드 완료</span>';
+    autoGenerate();
+}
+
+/* ── 엑셀 내보내기 (ExcelJS - 색상/테두리/2열 레이아웃) ── */
+async function exportToExcel() {
+    if (!lastComputed.length) { alert('먼저 시간표를 생성하세요.'); return; }
+    if (typeof ExcelJS === 'undefined') { alert('ExcelJS 로딩 중입니다. 잠시 후 다시 시도하세요.'); return; }
+
+    const dateStr = formatDateTitle();
+    const leagueLabel = getLeagueLabel();
+    const COLORS = ['FF92D050', 'FFBDD7EE', 'FFF4B084', 'FFD5A6E6'];
+    const BORDER = { style:'thin', color:{argb:'FF444444'} };
+    const allBorders = { top:BORDER, left:BORDER, bottom:BORDER, right:BORDER };
+
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('시간표', { views:[{showGridLines:false}] });
+
+    [5.5,8,8,20,13,7, 3, 5.5,8,8,20,13,7].forEach((w,i) => { ws.getColumn(i+1).width = w; });
+
+    ws.mergeCells(1,1,1,13);
+    const tc = ws.getCell(1,1);
+    tc.value = `${dateStr} ${leagueLabel} 명단`;
+    tc.font = { bold:true, size:16 };
+    tc.alignment = { horizontal:'center', vertical:'middle' };
+    ws.getRow(1).height = 30;
+
+    let curRow = 3;
+    for (let p = 0; p < lastComputed.length; p += 2) {
+        const leftH  = writeSectionBlock(ws, lastComputed[p], curRow, 1, COLORS, allBorders);
+        let rightH = 0;
+        if (p+1 < lastComputed.length) {
+            rightH = writeSectionBlock(ws, lastComputed[p+1], curRow, 8, COLORS, allBorders);
+        }
+        curRow += Math.max(leftH, rightH) + 2;
+    }
+
+    const buf = await wb.xlsx.writeBuffer();
+    const blob = new Blob([buf], {type:'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `${dateStr}_${leagueLabel}_시간표.xlsx`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+}
+
+function writeSectionBlock(ws, sec, startRow, startCol, COLORS, allBorders) {
+    const endCol = startCol + 5;
+    const bgArgb = COLORS[sec.colorIdx !== undefined ? sec.colorIdx : 0];
+    const hdrFill = { type:'pattern', pattern:'solid', fgColor:{argb:bgArgb} };
+    let r = startRow;
+
+    ws.mergeCells(r, startCol, r, endCol);
+    const ttl = ws.getCell(r, startCol);
+    ttl.value = sec.name;
+    ttl.font = { bold:true, size:11 };
+    ttl.alignment = { horizontal:'center', vertical:'middle' };
+    ttl.fill = hdrFill;
+    for (let c=startCol; c<=endCol; c++) ws.getCell(r,c).border = allBorders;
+    r++;
+
+    ['번호','시작','종료','구분','발표자','방식'].forEach((h,i) => {
+        const cell = ws.getCell(r, startCol+i);
+        cell.value = h;
+        cell.font = { bold:true, size:10 };
+        cell.alignment = { horizontal:'center', vertical:'middle' };
+        cell.fill = hdrFill;
+        cell.border = allBorders;
+    });
+    r++;
+
+    sec.slots.forEach(slot => {
+        [slot.num, slot.startTime, slot.endTime, slot.category, slot.presenter, slot.method].forEach((v,i) => {
+            const cell = ws.getCell(r, startCol+i);
+            cell.value = v;
+            cell.font = { size:10 };
+            cell.alignment = { horizontal: i===3?'left':'center', vertical:'middle' };
+            cell.border = allBorders;
+        });
+        r++;
+    });
+
+    if (sec.hasBreak) {
+        const brkFill = { type:'pattern', pattern:'solid', fgColor:{argb:'FFF0F0F0'} };
+        const brkFont = { bold:true, size:10, color:{argb:'FF666666'} };
+        ws.getCell(r,startCol).value = '';
+        ws.getCell(r,startCol+1).value = sec.breakStart;
+        ws.getCell(r,startCol+2).value = sec.breakEnd;
+        ws.mergeCells(r, startCol+3, r, endCol);
+        ws.getCell(r,startCol+3).value = '쉬는시간';
+        for (let c=startCol; c<=endCol; c++) {
+            const cell = ws.getCell(r,c);
+            cell.font = brkFont;
+            cell.alignment = { horizontal:'center', vertical:'middle' };
+            cell.fill = brkFill;
+            cell.border = allBorders;
+        }
+        r++;
+    }
+
+    return r - startRow;
+}
+
+/* ── 초기화 ── */
+initDate();
+renderBreakInputs();
+</script>
+</body>
+</html>
