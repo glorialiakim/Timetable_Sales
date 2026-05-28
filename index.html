@@ -448,6 +448,8 @@ const DAY_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
 let sections = [];
 let breakDurations = [10, 10];
 let lastComputed = [];
+let lastWorkbook = null;
+let lastLeagueType = null;
 
 /* ── 유틸 ── */
 function timeToMin(t) { const [h, m] = t.split(':').map(Number); return h * 60 + m; }
@@ -578,6 +580,8 @@ function handleFile(file) {
     const reader = new FileReader();
     reader.onload = e => {
         const wb = XLSX.read(new Uint8Array(e.target.result), { type: 'array' });
+        lastWorkbook = wb;
+        lastLeagueType = document.getElementById('leagueType').value;
         parseWorkbook(wb);
         document.getElementById('uploadText').innerHTML = '<span class="file-loaded">' + file.name + ' 로드 완료</span>';
         autoGenerate();
@@ -866,6 +870,11 @@ function removeSection(idx) {
 
 /* ── 시간표 생성 ── */
 function autoGenerate() {
+    const currentLeagueType = document.getElementById('leagueType').value;
+    if (lastWorkbook && lastLeagueType !== currentLeagueType) {
+        parseWorkbook(lastWorkbook);
+        lastLeagueType = currentLeagueType;
+    }
     initSectionBreaks();
     renderSectionConfig();
     if (sections.length && sections.some(s => s.entries.length > 0)) {
@@ -1062,6 +1071,8 @@ function downloadTemplate() {
 }
 
 function loadSampleData() {
+    lastWorkbook = null;
+    lastLeagueType = null;
     const defSlot = parseInt(document.getElementById('defaultSlotMin').value) || 10;
     sections = [
         { name:'2부', slotDuration: defSlot, breaks: [], entries: [
