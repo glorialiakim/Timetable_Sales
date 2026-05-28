@@ -562,10 +562,11 @@ function detectColumns(header) {
 function renderSectionConfig() {
     const c = document.getElementById('sectionsList');
     c.innerHTML = '';
-    const lunchGap = findLunchGap();
+    const lunchPos = findLunchPosition();
     const brkCount = parseInt(document.getElementById('breakCount').value) || 0;
-    const breakPos = lunchGap >= 0
-        ? distributeBreaksExcluding(sections.length, brkCount, lunchGap)
+    const lunchAtGap = (!lunchPos.withinSection && lunchPos.gapIdx >= 0) ? lunchPos.gapIdx : -1;
+    const breakPos = lunchAtGap >= 0
+        ? distributeBreaksExcluding(sections.length, brkCount, lunchAtGap)
         : distributeBreaks(sections.length, brkCount);
 
     sections.forEach((sec, idx) => {
@@ -627,14 +628,17 @@ function renderSectionConfig() {
         `;
         c.appendChild(div);
 
-        if (idx === lunchGap) {
+        if (lunchPos.gapIdx === idx && lunchPos.gapIdx >= 0) {
             const lunchS = document.getElementById('lunchStart').value || '12:00';
             const lunchE = document.getElementById('lunchEnd').value || '13:15';
             const marker = document.createElement('div');
             marker.className = 'break-marker';
-            marker.textContent = `--- 점심시간 (${lunchS} ~ ${lunchE}) ---`;
+            marker.textContent = lunchPos.withinSection
+                ? `--- 점심시간 (${lunchS} ~ ${lunchE}) (이 섹션 중간 배치) ---`
+                : `--- 점심시간 (${lunchS} ~ ${lunchE}) ---`;
             c.appendChild(marker);
-        } else if (breakPos.includes(idx) && idx < sections.length - 1) {
+        }
+        if (breakPos.includes(idx) && idx < sections.length - 1) {
             const bIdx = breakPos.indexOf(idx);
             const dur = bIdx < breakDurations.length ? breakDurations[bIdx] : 10;
             const marker = document.createElement('div');
@@ -665,24 +669,46 @@ function renderSummary() {
 
 function calcScheduleInfo() {
     const startMin = timeToMin(document.getElementById('globalStartTime').value || '10:00');
-    const lunchGap = findLunchGap();
+    const lunchEnabled = document.getElementById('lunchEnabled').checked;
+    const lunchStartMin = lunchEnabled ? timeToMin(document.getElementById('lunchStart').value || '12:00') : Infinity;
+    const lunchEndMin = lunchEnabled ? timeToMin(document.getElementById('lunchEnd').value || '13:15') : 0;
     const breakCount = parseInt(document.getElementById('breakCount').value) || 0;
-    const regularBreakPos = lunchGap >= 0
-        ? distributeBreaksExcluding(sections.length, breakCount, lunchGap)
+    const lunchPos = findLunchPosition();
+    const lunchAtGap = (!lunchPos.withinSection && lunchPos.gapIdx >= 0) ? lunchPos.gapIdx : -1;
+    const regularBreakPos = lunchAtGap >= 0
+        ? distributeBreaksExcluding(sections.length, breakCount, lunchAtGap)
         : distributeBreaks(sections.length, breakCount);
 
     let totalPresentMin = 0;
     sections.forEach(s => { totalPresentMin += s.entries.length * s.slotDuration; });
 
-    let totalBreakMin = 0;
-    regularBreakPos.forEach((_, i) => { totalBreakMin += (i < breakDurations.length ? breakDurations[i] : 10); });
-
+    /* 슬롯 단위로 시뮬레이션하여 점심/휴식 시간 계산 */
+    let currentTime = startMin;
+    let lunchTaken = false;
     let lunchMin = 0;
-    if (lunchGap >= 0) {
-        const lunchEndMin = timeToMin(document.getElementById('lunchEnd').value || '13:15');
-        let t = startMin;
-        for (let i = 0; i <= lunchGap; i++) t += sections[i].entries.length * sections[i].slotDuration;
-        lunchMin = lunchEndMin - t;
+    let totalBreakMin = 0;
+    let breakIdx = 0;
+
+    for (let idx = 0; idx < sections.length; idx++) {
+        for (let j = 0; j < sections[idx].entries.length; j++) {
+            if (lunchEnabled && !lunchTaken && currentTime >= lunchStartMin) {
+                lunchTaken = true;
+                lunchMin = lunchEndMin - currentTime;
+                currentTime = lunchEndMin;
+            }
+            currentTime += sections[idx].slotDuration;
+        }
+        if (lunchEnabled && !lunchTaken && currentTime >= lunchStartMin && idx < sections.length - 1) {
+            lunchTaken = true;
+            lunchMin = lunchEndMin - currentTime;
+            currentTime = lunchEndMin;
+            if (regularBreakPos.includes(idx)) breakIdx++;
+        } else if (regularBreakPos.includes(idx)) {
+            const dur = breakIdx < breakDurations.length ? breakDurations[breakIdx] : 10;
+            totalBreakMin += dur;
+            currentTime += dur;
+            breakIdx++;
+        }
     }
 
     return {
@@ -690,7 +716,7 @@ function calcScheduleInfo() {
         totalPresentMin,
         totalBreakMin: totalBreakMin + lunchMin,
         startMin,
-        endMin: startMin + totalPresentMin + totalBreakMin + lunchMin
+        endMin: currentTime
     };
 }
 
@@ -728,17 +754,29 @@ function autoGenerate() {
     }
 }
 
-function findLunchGap() {
+/* 점심이 어디에 배치되는지 미리 계산 (슬롯 단위)
+   returns { gapIdx, withinSection }
+   - gapIdx: 해당 섹션 인덱스 (뒤 갭 또는 내부), -1이면 점심 없음
+   - withinSection: true면 섹션 내부 엔트리 중간에 점심 삽입 */
+function findLunchPosition() {
     const lunchEnabled = document.getElementById('lunchEnabled').checked;
-    if (!lunchEnabled || sections.length <= 1) return -1;
+    if (!lunchEnabled || sections.length === 0) return { gapIdx: -1, withinSection: false };
     const lunchStartMin = timeToMin(document.getElementById('lunchStart').value || '12:00');
     const globalStart = timeToMin(document.getElementById('globalStartTime').value || '10:00');
+    if (globalStart >= lunchStartMin) return { gapIdx: -1, withinSection: false };
     let t = globalStart;
-    for (let i = 0; i < sections.length - 1; i++) {
-        t += sections[i].entries.length * sections[i].slotDuration;
-        if (t >= lunchStartMin) return i;
+    for (let i = 0; i < sections.length; i++) {
+        for (let j = 0; j < sections[i].entries.length; j++) {
+            if (t >= lunchStartMin) {
+                return j === 0
+                    ? { gapIdx: i - 1, withinSection: false }
+                    : { gapIdx: i, withinSection: true };
+            }
+            t += sections[i].slotDuration;
+        }
+        if (t >= lunchStartMin) return { gapIdx: i, withinSection: false };
     }
-    return -1;
+    return { gapIdx: -1, withinSection: false };
 }
 
 function distributeBreaksExcluding(numSections, numBreaks, excludedGap) {
@@ -765,34 +803,58 @@ function generateTimetable() {
     const globalStart = timeToMin(document.getElementById('globalStartTime').value || '10:00');
     const endLimit = timeToMin(document.getElementById('globalEndTime').value || '17:00');
     const lunchEnabled = document.getElementById('lunchEnabled').checked;
-    const lunchEndMin = timeToMin(document.getElementById('lunchEnd').value || '13:15');
-    const lunchGap = findLunchGap();
+    const lunchStartMin = lunchEnabled ? timeToMin(document.getElementById('lunchStart').value || '12:00') : Infinity;
+    const lunchEndMin = lunchEnabled ? timeToMin(document.getElementById('lunchEnd').value || '13:15') : 0;
     const breakCount = parseInt(document.getElementById('breakCount').value) || 0;
-    const regularBreakPos = lunchGap >= 0
-        ? distributeBreaksExcluding(sections.length, breakCount, lunchGap)
+
+    /* 점심이 섹션 갭에 떨어지면 해당 갭은 휴식 배분에서 제외 */
+    const lunchPos = findLunchPosition();
+    const lunchAtGap = (!lunchPos.withinSection && lunchPos.gapIdx >= 0) ? lunchPos.gapIdx : -1;
+    const regularBreakPos = lunchAtGap >= 0
+        ? distributeBreaksExcluding(sections.length, breakCount, lunchAtGap)
         : distributeBreaks(sections.length, breakCount);
 
     let currentTime = globalStart;
+    let lunchTaken = false;
     let breakIdx = 0;
 
     const computed = sections.map((sec, idx) => {
-        const start = currentTime;
-        const slots = sec.entries.map((entry, i) => ({
-            ...entry,
-            startTime: minToTime(start + i * sec.slotDuration),
-            endTime: minToTime(start + (i + 1) * sec.slotDuration),
-            num: i + 1
-        }));
-        currentTime = start + sec.entries.length * sec.slotDuration;
+        const slots = [];
 
+        for (let i = 0; i < sec.entries.length; i++) {
+            /* ── 슬롯 단위로 점심시간 체크 ── */
+            if (lunchEnabled && !lunchTaken && currentTime >= lunchStartMin) {
+                lunchTaken = true;
+                slots.push({
+                    ...sec.entries[i],
+                    startTime: minToTime(lunchEndMin),
+                    endTime: minToTime(lunchEndMin + sec.slotDuration),
+                    num: i + 1,
+                    lunchBefore: { start: minToTime(currentTime), end: minToTime(lunchEndMin) }
+                });
+                currentTime = lunchEndMin + sec.slotDuration;
+            } else {
+                slots.push({
+                    ...sec.entries[i],
+                    startTime: minToTime(currentTime),
+                    endTime: minToTime(currentTime + sec.slotDuration),
+                    num: i + 1
+                });
+                currentTime += sec.slotDuration;
+            }
+        }
+
+        /* ── 섹션 갭: 점심(아직 미배치) 또는 일반 휴식 ── */
         let breakStart = null, breakEnd = null, hasBreak = false, isLunch = false;
 
-        if (idx === lunchGap) {
+        if (lunchEnabled && !lunchTaken && currentTime >= lunchStartMin && idx < sections.length - 1) {
+            lunchTaken = true;
             breakStart = minToTime(currentTime);
             breakEnd = minToTime(lunchEndMin);
             currentTime = lunchEndMin;
             hasBreak = true;
             isLunch = true;
+            if (regularBreakPos.includes(idx)) breakIdx++;
         } else if (regularBreakPos.includes(idx)) {
             const dur = breakIdx < breakDurations.length ? breakDurations[breakIdx] : 10;
             breakStart = minToTime(currentTime);
@@ -836,6 +898,9 @@ function renderOutput(computed) {
             <th>구분</th><th>발표자</th><th style="width:50px">방식</th></tr>`;
 
         sec.slots.forEach(s => {
+            if (s.lunchBefore) {
+                html += `<tr class="break-row"><td></td><td>${s.lunchBefore.start}</td><td>${s.lunchBefore.end}</td><td colspan="3">점심시간</td></tr>`;
+            }
             html += `<tr><td>${s.num}</td><td>${s.startTime}</td><td>${s.endTime}</td>
                 <td style="text-align:left;padding-left:8px;">${s.category}</td><td>${s.presenter}</td><td>${s.method}</td></tr>`;
         });
@@ -972,6 +1037,23 @@ function writeSectionBlock(ws, sec, startRow, startCol, COLORS, allBorders) {
     r++;
 
     sec.slots.forEach(slot => {
+        if (slot.lunchBefore) {
+            const brkFill = { type:'pattern', pattern:'solid', fgColor:{argb:'FFF0F0F0'} };
+            const brkFont = { bold:true, size:10, color:{argb:'FF666666'} };
+            ws.getCell(r,startCol).value = '';
+            ws.getCell(r,startCol+1).value = slot.lunchBefore.start;
+            ws.getCell(r,startCol+2).value = slot.lunchBefore.end;
+            ws.mergeCells(r, startCol+3, r, endCol);
+            ws.getCell(r,startCol+3).value = '점심시간';
+            for (let c=startCol; c<=endCol; c++) {
+                const cell = ws.getCell(r,c);
+                cell.font = brkFont;
+                cell.alignment = { horizontal:'center', vertical:'middle' };
+                cell.fill = brkFill;
+                cell.border = allBorders;
+            }
+            r++;
+        }
         [slot.num, slot.startTime, slot.endTime, slot.category, slot.presenter, slot.method].forEach((v,i) => {
             const cell = ws.getCell(r, startCol+i);
             cell.value = v;
