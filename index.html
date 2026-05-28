@@ -569,6 +569,15 @@ function renderSectionConfig() {
         ? distributeBreaksExcluding(sections.length, brkCount, lunchAtGap)
         : distributeBreaks(sections.length, brkCount);
 
+    /* 실제 시간 계산을 위한 시뮬레이션 */
+    const simGlobalStart = timeToMin(document.getElementById('globalStartTime').value || '10:00');
+    const simLunchEnabled = document.getElementById('lunchEnabled').checked;
+    const simLunchStartMin = simLunchEnabled ? timeToMin(document.getElementById('lunchStart').value || '12:00') : Infinity;
+    const simLunchEndMin = simLunchEnabled ? timeToMin(document.getElementById('lunchEnd').value || '13:15') : 0;
+    let simTime = simGlobalStart;
+    let simLunchTaken = false;
+    let simLunchActualStart = null;
+
     sections.forEach((sec, idx) => {
         const colorHex = COLOR_HEX[idx % COLOR_HEX.length];
         const div = document.createElement('div');
@@ -628,22 +637,42 @@ function renderSectionConfig() {
         `;
         c.appendChild(div);
 
-        if (lunchPos.gapIdx === idx && lunchPos.gapIdx >= 0) {
-            const lunchS = document.getElementById('lunchStart').value || '12:00';
-            const lunchE = document.getElementById('lunchEnd').value || '13:15';
+        /* 이 섹션의 엔트리 시뮬레이션 (슬롯 단위 점심 체크) */
+        for (let j = 0; j < sec.entries.length; j++) {
+            if (simLunchEnabled && !simLunchTaken && simTime >= simLunchStartMin) {
+                simLunchTaken = true;
+                simLunchActualStart = simTime;
+                simTime = simLunchEndMin;
+            }
+            simTime += sec.slotDuration;
+        }
+
+        /* 점심시간 마커: 섹션 갭에 위치 */
+        if (lunchPos.gapIdx === idx && !lunchPos.withinSection && simLunchEnabled && !simLunchTaken) {
+            simLunchActualStart = simTime;
+            simLunchTaken = true;
             const marker = document.createElement('div');
             marker.className = 'break-marker';
-            marker.textContent = lunchPos.withinSection
-                ? `--- 점심시간 (${lunchS} ~ ${lunchE}) (이 섹션 중간 배치) ---`
-                : `--- 점심시간 (${lunchS} ~ ${lunchE}) ---`;
+            marker.textContent = `--- 점심시간 (${minToTime(simTime)} ~ ${minToTime(simLunchEndMin)}) ---`;
+            simTime = simLunchEndMin;
             c.appendChild(marker);
         }
+        /* 점심시간 마커: 섹션 내부에 위치 (이미 시뮬레이션에서 처리됨) */
+        if (lunchPos.gapIdx === idx && lunchPos.withinSection && simLunchActualStart !== null) {
+            const marker = document.createElement('div');
+            marker.className = 'break-marker';
+            marker.textContent = `--- 점심시간 (${minToTime(simLunchActualStart)} ~ ${minToTime(simLunchEndMin)}) (이 섹션 중간 배치) ---`;
+            c.appendChild(marker);
+        }
+
+        /* 휴식 마커: 실제 시간 표시 */
         if (breakPos.includes(idx) && idx < sections.length - 1) {
             const bIdx = breakPos.indexOf(idx);
             const dur = bIdx < breakDurations.length ? breakDurations[bIdx] : 10;
             const marker = document.createElement('div');
             marker.className = 'break-marker';
-            marker.textContent = `--- ${bIdx+1}번째 휴식 (${dur}분) ---`;
+            marker.textContent = `--- ${bIdx+1}번째 휴식 (${minToTime(simTime)} ~ ${minToTime(simTime + dur)}) ---`;
+            simTime += dur;
             c.appendChild(marker);
         }
     });
