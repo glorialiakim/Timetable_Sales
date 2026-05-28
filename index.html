@@ -409,7 +409,7 @@
             <div id="sectionsList"></div>
             <div id="summaryBar"></div>
             <div class="btn-row" style="margin-top:16px">
-                <button class="btn btn-green" onclick="generateTimetable()" style="padding:12px 40px; font-size:16px;">
+                <button class="btn btn-green" onclick="autoGenerate()" style="padding:12px 40px; font-size:16px;">
                     시간표 생성
                 </button>
             </div>
@@ -420,7 +420,7 @@
             <div class="actions-bar no-print">
                 <button class="btn btn-outline" onclick="window.print()">인쇄</button>
                 <button class="btn btn-outline" onclick="exportToExcel()">엑셀로 내보내기</button>
-                <button class="btn btn-primary" onclick="generateTimetable()">다시 생성</button>
+                <button class="btn btn-primary" onclick="autoGenerate()">다시 생성</button>
             </div>
             <div id="warningArea"></div>
             <div class="timetable-output" id="timetableOutput"></div>
