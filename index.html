@@ -323,7 +323,7 @@
                 </div>
                 <div class="field">
                     <label>시작 시간</label>
-                    <input type="time" id="globalStartTime" value="11:00">
+                    <input type="time" id="globalStartTime" value="10:00">
                 </div>
                 <div class="field">
                     <label>종료 시간 (최대)</label>
@@ -342,7 +342,7 @@
             <div class="settings-grid" style="grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));">
                 <div class="field">
                     <label>휴식 횟수</label>
-                    <input type="number" id="breakCount" value="3" min="0" max="10" onchange="renderBreakInputs()">
+                    <input type="number" id="breakCount" value="2" min="0" max="10" onchange="renderBreakInputs()">
                 </div>
                 <div class="field">
                     <label>기본 휴식 시간 (분)</label>
@@ -350,6 +350,22 @@
                 </div>
             </div>
             <div class="break-inputs" id="breakInputs"></div>
+            <div style="border-top:1px solid #eee; padding-top:14px; margin-top:14px;">
+                <div class="settings-grid" style="grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));">
+                    <div class="field" style="flex-direction:row; align-items:center; gap:8px; padding-top:20px;">
+                        <input type="checkbox" id="lunchEnabled" checked style="width:16px;height:16px;">
+                        <label for="lunchEnabled" style="white-space:nowrap;">점심시간 포함</label>
+                    </div>
+                    <div class="field">
+                        <label>점심 시작</label>
+                        <input type="time" id="lunchStart" value="12:00">
+                    </div>
+                    <div class="field">
+                        <label>오후 시작</label>
+                        <input type="time" id="lunchEnd" value="13:15">
+                    </div>
+                </div>
+            </div>
         </div>
 
         <!-- 엑셀 업로드 -->
@@ -401,7 +417,7 @@ const COLOR_HEX = ['#92D050', '#BDD7EE', '#F4B084', '#D5A6E6'];
 const DAY_NAMES = ['일', '월', '화', '수', '목', '금', '토'];
 
 let sections = [];
-let breakDurations = [10, 10, 10];
+let breakDurations = [10, 10];
 let lastComputed = [];
 
 /* ── 유틸 ── */
@@ -546,7 +562,11 @@ function detectColumns(header) {
 function renderSectionConfig() {
     const c = document.getElementById('sectionsList');
     c.innerHTML = '';
-    const breakPos = distributeBreaks(sections.length, parseInt(document.getElementById('breakCount').value) || 0);
+    const lunchGap = findLunchGap();
+    const brkCount = parseInt(document.getElementById('breakCount').value) || 0;
+    const breakPos = lunchGap >= 0
+        ? distributeBreaksExcluding(sections.length, brkCount, lunchGap)
+        : distributeBreaks(sections.length, brkCount);
 
     sections.forEach((sec, idx) => {
         const colorHex = COLOR_HEX[idx % COLOR_HEX.length];
@@ -607,7 +627,14 @@ function renderSectionConfig() {
         `;
         c.appendChild(div);
 
-        if (breakPos.includes(idx) && idx < sections.length - 1) {
+        if (idx === lunchGap) {
+            const lunchS = document.getElementById('lunchStart').value || '12:00';
+            const lunchE = document.getElementById('lunchEnd').value || '13:15';
+            const marker = document.createElement('div');
+            marker.className = 'break-marker';
+            marker.textContent = `--- 점심시간 (${lunchS} ~ ${lunchE}) ---`;
+            c.appendChild(marker);
+        } else if (breakPos.includes(idx) && idx < sections.length - 1) {
             const bIdx = breakPos.indexOf(idx);
             const dur = bIdx < breakDurations.length ? breakDurations[bIdx] : 10;
             const marker = document.createElement('div');
@@ -637,18 +664,33 @@ function renderSummary() {
 }
 
 function calcScheduleInfo() {
-    const startMin = timeToMin(document.getElementById('globalStartTime').value || '11:00');
-    const breakPos = distributeBreaks(sections.length, parseInt(document.getElementById('breakCount').value) || 0);
+    const startMin = timeToMin(document.getElementById('globalStartTime').value || '10:00');
+    const lunchGap = findLunchGap();
+    const breakCount = parseInt(document.getElementById('breakCount').value) || 0;
+    const regularBreakPos = lunchGap >= 0
+        ? distributeBreaksExcluding(sections.length, breakCount, lunchGap)
+        : distributeBreaks(sections.length, breakCount);
+
     let totalPresentMin = 0;
     sections.forEach(s => { totalPresentMin += s.entries.length * s.slotDuration; });
+
     let totalBreakMin = 0;
-    breakPos.forEach((_, i) => { totalBreakMin += (i < breakDurations.length ? breakDurations[i] : 10); });
+    regularBreakPos.forEach((_, i) => { totalBreakMin += (i < breakDurations.length ? breakDurations[i] : 10); });
+
+    let lunchMin = 0;
+    if (lunchGap >= 0) {
+        const lunchEndMin = timeToMin(document.getElementById('lunchEnd').value || '13:15');
+        let t = startMin;
+        for (let i = 0; i <= lunchGap; i++) t += sections[i].entries.length * sections[i].slotDuration;
+        lunchMin = lunchEndMin - t;
+    }
+
     return {
         totalEntries: sections.reduce((a, s) => a + s.entries.length, 0),
         totalPresentMin,
-        totalBreakMin,
+        totalBreakMin: totalBreakMin + lunchMin,
         startMin,
-        endMin: startMin + totalPresentMin + totalBreakMin
+        endMin: startMin + totalPresentMin + totalBreakMin + lunchMin
     };
 }
 
@@ -686,15 +728,50 @@ function autoGenerate() {
     }
 }
 
+function findLunchGap() {
+    const lunchEnabled = document.getElementById('lunchEnabled').checked;
+    if (!lunchEnabled || sections.length <= 1) return -1;
+    const lunchStartMin = timeToMin(document.getElementById('lunchStart').value || '12:00');
+    const globalStart = timeToMin(document.getElementById('globalStartTime').value || '10:00');
+    let t = globalStart;
+    for (let i = 0; i < sections.length - 1; i++) {
+        t += sections[i].entries.length * sections[i].slotDuration;
+        if (t >= lunchStartMin) return i;
+    }
+    return -1;
+}
+
+function distributeBreaksExcluding(numSections, numBreaks, excludedGap) {
+    const gaps = [];
+    for (let i = 0; i < numSections - 1; i++) { if (i !== excludedGap) gaps.push(i); }
+    if (numBreaks <= 0 || gaps.length === 0) return [];
+    const B = Math.min(numBreaks, gaps.length);
+    if (B === gaps.length) return gaps;
+    const positions = [];
+    const step = gaps.length / (B + 1);
+    for (let i = 1; i <= B; i++) {
+        const idx = Math.round(i * step) - 1;
+        if (!positions.includes(gaps[idx])) positions.push(gaps[idx]);
+    }
+    return positions.sort((a, b) => a - b);
+}
+
 function generateTimetable() {
     if (!sections.length || sections.every(s => s.entries.length === 0)) {
         alert('섹션과 발표자 데이터를 먼저 입력해주세요.');
         return;
     }
 
-    const globalStart = timeToMin(document.getElementById('globalStartTime').value || '11:00');
+    const globalStart = timeToMin(document.getElementById('globalStartTime').value || '10:00');
     const endLimit = timeToMin(document.getElementById('globalEndTime').value || '17:00');
-    const breakPos = distributeBreaks(sections.length, parseInt(document.getElementById('breakCount').value) || 0);
+    const lunchEnabled = document.getElementById('lunchEnabled').checked;
+    const lunchEndMin = timeToMin(document.getElementById('lunchEnd').value || '13:15');
+    const lunchGap = findLunchGap();
+    const breakCount = parseInt(document.getElementById('breakCount').value) || 0;
+    const regularBreakPos = lunchGap >= 0
+        ? distributeBreaksExcluding(sections.length, breakCount, lunchGap)
+        : distributeBreaks(sections.length, breakCount);
+
     let currentTime = globalStart;
     let breakIdx = 0;
 
@@ -708,8 +785,15 @@ function generateTimetable() {
         }));
         currentTime = start + sec.entries.length * sec.slotDuration;
 
-        let breakStart = null, breakEnd = null, hasBreak = false;
-        if (breakPos.includes(idx) && idx < sections.length - 1) {
+        let breakStart = null, breakEnd = null, hasBreak = false, isLunch = false;
+
+        if (idx === lunchGap) {
+            breakStart = minToTime(currentTime);
+            breakEnd = minToTime(lunchEndMin);
+            currentTime = lunchEndMin;
+            hasBreak = true;
+            isLunch = true;
+        } else if (regularBreakPos.includes(idx)) {
             const dur = breakIdx < breakDurations.length ? breakDurations[breakIdx] : 10;
             breakStart = minToTime(currentTime);
             breakEnd = minToTime(currentTime + dur);
@@ -722,7 +806,7 @@ function generateTimetable() {
             name: sec.name,
             colorClass: SECTION_COLORS[idx % SECTION_COLORS.length],
             colorIdx: idx % SECTION_COLORS.length,
-            slots, breakStart, breakEnd, hasBreak
+            slots, breakStart, breakEnd, hasBreak, isLunch
         };
     });
 
@@ -757,7 +841,8 @@ function renderOutput(computed) {
         });
 
         if (sec.hasBreak) {
-            html += `<tr class="break-row"><td></td><td>${sec.breakStart}</td><td>${sec.breakEnd}</td><td colspan="3">쉬는시간</td></tr>`;
+            const breakLabel = sec.isLunch ? '점심시간' : '쉬는시간';
+            html += `<tr class="break-row"><td></td><td>${sec.breakStart}</td><td>${sec.breakEnd}</td><td colspan="3">${breakLabel}</td></tr>`;
         }
         html += '</table></div>';
     });
@@ -904,7 +989,7 @@ function writeSectionBlock(ws, sec, startRow, startCol, COLORS, allBorders) {
         ws.getCell(r,startCol+1).value = sec.breakStart;
         ws.getCell(r,startCol+2).value = sec.breakEnd;
         ws.mergeCells(r, startCol+3, r, endCol);
-        ws.getCell(r,startCol+3).value = '쉬는시간';
+        ws.getCell(r,startCol+3).value = sec.isLunch ? '점심시간' : '쉬는시간';
         for (let c=startCol; c<=endCol; c++) {
             const cell = ws.getCell(r,c);
             cell.font = brkFont;
