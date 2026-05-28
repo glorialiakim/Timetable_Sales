@@ -604,27 +604,30 @@ function parseWorkbook(wb) {
             if (!row || row.every(c => c === '' || c == null)) continue;
             const secName = String(colMap.section !== -1 ? row[colMap.section] : sn).trim();
             const cat = String(colMap.category !== -1 ? row[colMap.category] : '').trim();
+            const topic = String(colMap.topic !== -1 ? row[colMap.topic] : '').trim();
             const pres = String(colMap.presenter !== -1 ? row[colMap.presenter] : '').trim();
             const meth = String(colMap.method !== -1 ? row[colMap.method] : '').trim();
             if (!secName && !pres) continue;
             let sec = sections.find(s => s.name === (secName || '기타'));
             if (!sec) { sec = { name: secName || '기타', entries: [], breaks: [], slotDuration: defSlot }; sections.push(sec); }
-            if (pres || cat) sec.entries.push({ category: cat, presenter: pres, method: meth });
+            if (pres || cat) sec.entries.push({ category: cat, topic, presenter: pres, method: meth });
         }
     });
 }
 
 function detectColumns(header) {
-    const map = { section: -1, category: -1, presenter: -1, method: -1 };
+    const map = { section: -1, category: -1, topic: -1, presenter: -1, method: -1 };
     header.forEach((h, i) => {
         const l = h.toLowerCase();
         if (l.includes('섹션') || l.includes('부') || l.includes('section') || l.includes('그룹')) map.section = i;
         else if (l.includes('구분') || l.includes('소구분') || l.includes('category') || l.includes('지역')) map.category = i;
+        else if (l.includes('주제') || l.includes('topic') || l.includes('제목') || l.includes('과제명')) map.topic = i;
         else if (l.includes('발표자') || l.includes('이름') || l.includes('name') || l.includes('담당')) map.presenter = i;
         else if (l.includes('방식') || l.includes('method') || l.includes('유형')) map.method = i;
     });
     if (map.section === -1 && map.category === -1 && map.presenter === -1) {
-        if (header.length >= 4) { map.section=0; map.category=1; map.presenter=2; map.method=3; }
+        if (header.length >= 5) { map.section=0; map.category=1; map.topic=2; map.presenter=3; map.method=4; }
+        else if (header.length >= 4) { map.section=0; map.category=1; map.presenter=2; map.method=3; }
         else if (header.length === 3) { map.section=0; map.category=1; map.presenter=2; }
         else if (header.length === 2) { map.category=0; map.presenter=1; }
     }
@@ -692,6 +695,7 @@ function renderSectionConfig() {
                                 <div class="entry-info">
                                     <span class="entry-num">${ei+1}</span>
                                     <span style="min-width:90px">${e.category}</span>
+                                    ${e.topic ? `<span style="color:#1565c0;min-width:90px">${e.topic}</span>` : ''}
                                     <span style="font-weight:600">${e.presenter}</span>
                                     <span style="color:#888">${e.method}</span>
                                 </div>
@@ -710,8 +714,9 @@ function renderSectionConfig() {
                             </div>` : ''}`;
                         }).join('')}
                     </div>
-                    <div style="margin-top:6px; display:flex; gap:6px; align-items:center;">
+                    <div style="margin-top:6px; display:flex; gap:6px; align-items:center; flex-wrap:wrap;">
                         <input type="text" placeholder="구분" id="aC${idx}" style="width:100px;padding:4px 8px;font-size:12px;">
+                        <input type="text" placeholder="주제" id="aT${idx}" style="width:100px;padding:4px 8px;font-size:12px;">
                         <input type="text" placeholder="발표자" id="aP${idx}" style="width:100px;padding:4px 8px;font-size:12px;">
                         <input type="text" placeholder="방식" id="aM${idx}" style="width:80px;padding:4px 8px;font-size:12px;">
                         <button class="btn btn-outline btn-sm" onclick="addEntry(${idx})">추가</button>
@@ -838,10 +843,11 @@ function toggleDetail(idx) {
 
 function addEntry(idx) {
     const cat = document.getElementById('aC'+idx).value.trim();
+    const topic = document.getElementById('aT'+idx).value.trim();
     const pres = document.getElementById('aP'+idx).value.trim();
     const meth = document.getElementById('aM'+idx).value.trim();
     if (!pres && !cat) return;
-    sections[idx].entries.push({ category: cat, presenter: pres, method: meth });
+    sections[idx].entries.push({ category: cat, topic, presenter: pres, method: meth });
     renderSectionConfig();
 }
 
@@ -1000,29 +1006,32 @@ function renderOutput(computed) {
     let html = `<div class="timetable-title-text">${title}</div><div class="timetable-grid">`;
 
     computed.forEach(sec => {
+        const hasTopic = sec.slots.some(s => s.topic && s.topic.trim());
+        const colCount = hasTopic ? 7 : 6;
+        const breakColspan = hasTopic ? 4 : 3;
         html += '<div class="tt-section"><table>';
-        html += `<tr class="${sec.colorClass}"><th colspan="6" style="font-size:13px;padding:6px;">${sec.name}</th></tr>`;
+        html += `<tr class="${sec.colorClass}"><th colspan="${colCount}" style="font-size:13px;padding:6px;">${sec.name}</th></tr>`;
         html += `<tr class="${sec.colorClass}">
             <th style="width:36px">번호</th><th style="width:55px">시작</th><th style="width:55px">종료</th>
-            <th>구분</th><th>발표자</th><th style="width:50px">방식</th></tr>`;
+            <th>구분</th>${hasTopic ? '<th>주제</th>' : ''}<th>발표자</th><th style="width:50px">방식</th></tr>`;
 
         sec.slots.forEach(s => {
             if (s.lunchBefore) {
-                html += `<tr class="break-row"><td></td><td>${s.lunchBefore.start}</td><td>${s.lunchBefore.end}</td><td colspan="3">점심시간</td></tr>`;
+                html += `<tr class="break-row"><td></td><td>${s.lunchBefore.start}</td><td>${s.lunchBefore.end}</td><td colspan="${breakColspan}">점심시간</td></tr>`;
             }
             html += `<tr><td>${s.num}</td><td>${s.startTime}</td><td>${s.endTime}</td>
-                <td style="text-align:left;padding-left:8px;">${s.category}</td><td>${s.presenter}</td><td>${s.method}</td></tr>`;
+                <td style="text-align:left;padding-left:8px;">${s.category}</td>${hasTopic ? `<td style="text-align:left;padding-left:8px;">${s.topic || ''}</td>` : ''}<td>${s.presenter}</td><td>${s.method}</td></tr>`;
             if (s.lunchAfter) {
-                html += `<tr class="break-row"><td></td><td>${s.lunchAfter.start}</td><td>${s.lunchAfter.end}</td><td colspan="3">점심시간</td></tr>`;
+                html += `<tr class="break-row"><td></td><td>${s.lunchAfter.start}</td><td>${s.lunchAfter.end}</td><td colspan="${breakColspan}">점심시간</td></tr>`;
             }
             if (s.breakAfter) {
-                html += `<tr class="break-row"><td></td><td>${s.breakAfter.start}</td><td>${s.breakAfter.end}</td><td colspan="3">쉬는시간</td></tr>`;
+                html += `<tr class="break-row"><td></td><td>${s.breakAfter.start}</td><td>${s.breakAfter.end}</td><td colspan="${breakColspan}">쉬는시간</td></tr>`;
             }
         });
 
         if (sec.hasBreak) {
             const breakLabel = sec.isLunch ? '점심시간' : '쉬는시간';
-            html += `<tr class="break-row"><td></td><td>${sec.breakStart}</td><td>${sec.breakEnd}</td><td colspan="3">${breakLabel}</td></tr>`;
+            html += `<tr class="break-row"><td></td><td>${sec.breakStart}</td><td>${sec.breakEnd}</td><td colspan="${breakColspan}">${breakLabel}</td></tr>`;
         }
         html += '</table></div>';
     });
@@ -1046,8 +1055,8 @@ function downloadTemplate() {
     const ws = XLSX.utils.aoa_to_sheet(data);
     ws['!cols'] = [{wch:22},{wch:22},{wch:12},{wch:8}];
     XLSX.utils.book_append_sheet(wb, ws, '영업리그');
-    const ws2 = XLSX.utils.aoa_to_sheet([['섹션','구분','발표자','방식'],['과제1부','','','']]);
-    ws2['!cols'] = [{wch:22},{wch:22},{wch:12},{wch:8}];
+    const ws2 = XLSX.utils.aoa_to_sheet([['섹션','구분','주제','발표자','방식'],['과제1부','','','','']]);
+    ws2['!cols'] = [{wch:22},{wch:22},{wch:22},{wch:12},{wch:8}];
     XLSX.utils.book_append_sheet(wb, ws2, '과제리그');
     XLSX.writeFile(wb, '리그_시간표_템플릿.xlsx');
 }
@@ -1095,12 +1104,21 @@ async function exportToExcel() {
     const BORDER = { style:'thin', color:{argb:'FF444444'} };
     const allBorders = { top:BORDER, left:BORDER, bottom:BORDER, right:BORDER };
 
+    const hasTopic = lastComputed.some(sec => sec.slots.some(s => s.topic && s.topic.trim()));
+    const colsPerSec = hasTopic ? 7 : 6;
+    const rightStart = colsPerSec + 2;
+    const totalCols = colsPerSec * 2 + 1;
+
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('시간표', { views:[{showGridLines:false}] });
 
-    [5.5,8,8,20,13,7, 3, 5.5,8,8,20,13,7].forEach((w,i) => { ws.getColumn(i+1).width = w; });
+    if (hasTopic) {
+        [5.5,8,8,16,16,13,7, 3, 5.5,8,8,16,16,13,7].forEach((w,i) => { ws.getColumn(i+1).width = w; });
+    } else {
+        [5.5,8,8,20,13,7, 3, 5.5,8,8,20,13,7].forEach((w,i) => { ws.getColumn(i+1).width = w; });
+    }
 
-    ws.mergeCells(1,1,1,13);
+    ws.mergeCells(1,1,1,totalCols);
     const tc = ws.getCell(1,1);
     tc.value = `${dateStr} ${leagueLabel} 명단`;
     tc.font = { bold:true, size:16 };
@@ -1109,10 +1127,10 @@ async function exportToExcel() {
 
     let curRow = 3;
     for (let p = 0; p < lastComputed.length; p += 2) {
-        const leftH  = writeSectionBlock(ws, lastComputed[p], curRow, 1, COLORS, allBorders);
+        const leftH  = writeSectionBlock(ws, lastComputed[p], curRow, 1, COLORS, allBorders, hasTopic);
         let rightH = 0;
         if (p+1 < lastComputed.length) {
-            rightH = writeSectionBlock(ws, lastComputed[p+1], curRow, 8, COLORS, allBorders);
+            rightH = writeSectionBlock(ws, lastComputed[p+1], curRow, rightStart, COLORS, allBorders, hasTopic);
         }
         curRow += Math.max(leftH, rightH) + 2;
     }
@@ -1126,8 +1144,9 @@ async function exportToExcel() {
     URL.revokeObjectURL(a.href);
 }
 
-function writeSectionBlock(ws, sec, startRow, startCol, COLORS, allBorders) {
-    const endCol = startCol + 5;
+function writeSectionBlock(ws, sec, startRow, startCol, COLORS, allBorders, hasTopic) {
+    const colCount = hasTopic ? 7 : 6;
+    const endCol = startCol + colCount - 1;
     const bgArgb = COLORS[sec.colorIdx !== undefined ? sec.colorIdx : 0];
     const hdrFill = { type:'pattern', pattern:'solid', fgColor:{argb:bgArgb} };
     let r = startRow;
@@ -1141,7 +1160,10 @@ function writeSectionBlock(ws, sec, startRow, startCol, COLORS, allBorders) {
     for (let c=startCol; c<=endCol; c++) ws.getCell(r,c).border = allBorders;
     r++;
 
-    ['번호','시작','종료','구분','발표자','방식'].forEach((h,i) => {
+    const headers = hasTopic
+        ? ['번호','시작','종료','구분','주제','발표자','방식']
+        : ['번호','시작','종료','구분','발표자','방식'];
+    headers.forEach((h,i) => {
         const cell = ws.getCell(r, startCol+i);
         cell.value = h;
         cell.font = { bold:true, size:10 };
@@ -1169,11 +1191,15 @@ function writeSectionBlock(ws, sec, startRow, startCol, COLORS, allBorders) {
             }
             r++;
         }
-        [slot.num, slot.startTime, slot.endTime, slot.category, slot.presenter, slot.method].forEach((v,i) => {
+        const dataRow = hasTopic
+            ? [slot.num, slot.startTime, slot.endTime, slot.category, slot.topic || '', slot.presenter, slot.method]
+            : [slot.num, slot.startTime, slot.endTime, slot.category, slot.presenter, slot.method];
+        const leftAlignCols = hasTopic ? [3,4] : [3];
+        dataRow.forEach((v,i) => {
             const cell = ws.getCell(r, startCol+i);
             cell.value = v;
             cell.font = { size:10 };
-            cell.alignment = { horizontal: i===3?'left':'center', vertical:'middle' };
+            cell.alignment = { horizontal: leftAlignCols.includes(i)?'left':'center', vertical:'middle' };
             cell.border = allBorders;
         });
         r++;
