@@ -362,8 +362,12 @@
                     <input type="time" id="globalEndTime" value="17:00">
                 </div>
                 <div class="field">
-                    <label>배정 시간 (분)</label>
-                    <input type="number" id="defaultSlotMin" value="10" min="1" max="60">
+                    <label>발표 시간 (분)</label>
+                    <input type="number" id="defaultPresentMin" value="7" min="1" max="60">
+                </div>
+                <div class="field">
+                    <label>전환 시간 (분)</label>
+                    <input type="number" id="defaultTransitionMin" value="3" min="0" max="30">
                 </div>
             </div>
         </div>
@@ -600,7 +604,8 @@ function parseWorkbook(wb) {
     else if (lt === 'task') { sheetNames = wb.SheetNames.filter(n => n.includes('과제')); if (!sheetNames.length) sheetNames = [wb.SheetNames[wb.SheetNames.length > 1 ? 1 : 0]]; }
     else { sheetNames = wb.SheetNames; }
 
-    const defSlot = parseInt(document.getElementById('defaultSlotMin').value) || 10;
+    const defPresent = parseInt(document.getElementById('defaultPresentMin').value) || 7;
+    const defTransition = parseInt(document.getElementById('defaultTransitionMin').value) || 3;
 
     sheetNames.forEach(sn => {
         const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, defval: '' });
@@ -616,7 +621,7 @@ function parseWorkbook(wb) {
             const meth = String(colMap.method !== -1 ? row[colMap.method] : '').trim();
             if (!secName && !pres) continue;
             let sec = sections.find(s => s.name === (secName || '기타'));
-            if (!sec) { sec = { name: secName || '기타', entries: [], breaks: [], slotDuration: defSlot }; sections.push(sec); }
+            if (!sec) { sec = { name: secName || '기타', entries: [], breaks: [], presentDuration: defPresent, transitionDuration: defTransition }; sections.push(sec); }
             if (pres || cat) sec.entries.push({ category: cat, topic, presenter: pres, method: meth });
         }
     });
@@ -668,7 +673,7 @@ function renderSectionConfig() {
                         <span class="color-dot" style="background:${colorHex}"></span>
                         <span>${sec.name}</span>
                         <span class="badge">${sec.entries.length}명</span>
-                        <span class="badge" style="background:#e8f5e9; color:#2e7d32;">${sec.slotDuration}분</span>
+                        <span class="badge" style="background:#e8f5e9; color:#2e7d32;">${sec.presentDuration}+${sec.transitionDuration}분</span>
                         ${brkCount ? `<span class="badge" style="background:#fff3e0; color:#e65100;">휴식 ${brkCount}</span>` : ''}
                     </h3>
                     <div style="display:flex; gap:4px; align-items:center;">
@@ -688,9 +693,14 @@ function renderSectionConfig() {
                                 onchange="sections[${idx}].name=this.value; renderSectionConfig();">
                         </div>
                         <div class="field">
-                            <label>배정 시간 (분)</label>
-                            <input type="number" value="${sec.slotDuration}" min="1" max="60"
-                                onchange="sections[${idx}].slotDuration=parseInt(this.value); renderSectionConfig();">
+                            <label>발표 시간 (분)</label>
+                            <input type="number" value="${sec.presentDuration}" min="1" max="60"
+                                onchange="sections[${idx}].presentDuration=parseInt(this.value); renderSectionConfig();">
+                        </div>
+                        <div class="field">
+                            <label>전환 시간 (분)</label>
+                            <input type="number" value="${sec.transitionDuration}" min="0" max="30"
+                                onchange="sections[${idx}].transitionDuration=parseInt(this.value); renderSectionConfig();">
                         </div>
                     </div>
                     <div class="entries-list">
@@ -734,13 +744,14 @@ function renderSectionConfig() {
         c.appendChild(div);
 
         /* 이 섹션의 엔트리+휴식 시뮬레이션 */
+        const simSlotTotal = sec.presentDuration + sec.transitionDuration;
         for (let j = 0; j < sec.entries.length; j++) {
             if (simLunchEnabled && !simLunchTaken && simTime >= simLunchStartMin) {
                 simLunchTaken = true;
                 simLunchActualStart = simTime;
                 simTime = simLunchEndMin;
             }
-            simTime += sec.slotDuration;
+            simTime += simSlotTotal;
             const brk = (sec.breaks || []).find(b => b.afterEntry === j);
             if (brk) {
                 if (simLunchEnabled && !simLunchTaken && simTime >= simLunchStartMin) {
@@ -783,6 +794,7 @@ function renderSummary() {
         <div class="summary-bar">
             <div class="summary-item"><span class="s-label">총 발표:</span><span class="s-value">${info.totalEntries}명</span></div>
             <div class="summary-item"><span class="s-label">발표 시간:</span><span class="s-value">${info.totalPresentMin}분</span></div>
+            <div class="summary-item"><span class="s-label">전환 시간:</span><span class="s-value">${info.totalTransitionMin}분</span></div>
             <div class="summary-item"><span class="s-label">휴식 시간:</span><span class="s-value">${info.totalBreakMin}분</span></div>
             <div class="summary-item"><span class="s-label">예상 시작:</span><span class="s-value">${minToTime(info.startMin)}</span></div>
             <div class="summary-item"><span class="s-label">예상 종료:</span><span class="s-value ${isOver?'over':''}">${minToTime(info.endMin)}${isOver ? ' (17:00 초과!)' : ''}</span></div>
@@ -797,10 +809,13 @@ function calcScheduleInfo() {
     const lunchEndMin = lunchEnabled ? timeToMin(document.getElementById('lunchEnd').value || '13:15') : 0;
 
     let totalPresentMin = 0;
-    sections.forEach(s => { totalPresentMin += s.entries.length * s.slotDuration; });
+    sections.forEach(s => { totalPresentMin += s.entries.length * s.presentDuration; });
 
     let totalBreakMin = 0;
     sections.forEach(s => { (s.breaks || []).forEach(b => { totalBreakMin += b.duration; }); });
+
+    let totalTransitionMin = 0;
+    sections.forEach(s => { totalTransitionMin += s.entries.length * s.transitionDuration; });
 
     /* 슬롯 단위 시뮬레이션 (점심 포함) */
     let currentTime = startMin;
@@ -810,13 +825,14 @@ function calcScheduleInfo() {
     for (let idx = 0; idx < sections.length; idx++) {
         const sec = sections[idx];
         const secBreaks = sec.breaks || [];
+        const slotTotal = sec.presentDuration + sec.transitionDuration;
         for (let j = 0; j < sec.entries.length; j++) {
             if (lunchEnabled && !lunchTaken && currentTime >= lunchStartMin) {
                 lunchTaken = true;
                 lunchMin = lunchEndMin - currentTime;
                 currentTime = lunchEndMin;
             }
-            currentTime += sec.slotDuration;
+            currentTime += slotTotal;
             const brk = secBreaks.find(b => b.afterEntry === j);
             if (brk) {
                 if (lunchEnabled && !lunchTaken && currentTime >= lunchStartMin) {
@@ -838,6 +854,7 @@ function calcScheduleInfo() {
         totalEntries: sections.reduce((a, s) => a + s.entries.length, 0),
         totalPresentMin,
         totalBreakMin: totalBreakMin + lunchMin,
+        totalTransitionMin,
         startMin,
         endMin: currentTime
     };
@@ -903,7 +920,7 @@ function findLunchPosition() {
                     ? { gapIdx: i - 1, withinSection: false }
                     : { gapIdx: i, withinSection: true };
             }
-            t += sections[i].slotDuration;
+            t += sections[i].presentDuration + sections[i].transitionDuration;
         }
         if (t >= lunchStartMin) return { gapIdx: i, withinSection: false };
     }
@@ -943,6 +960,7 @@ function generateTimetable() {
     const computed = sections.map((sec, idx) => {
         const slots = [];
         const secBreaks = sec.breaks || [];
+        const slotTotal = sec.presentDuration + sec.transitionDuration;
 
         for (let i = 0; i < sec.entries.length; i++) {
             /* ── 슬롯 단위로 점심시간 체크 ── */
@@ -951,19 +969,19 @@ function generateTimetable() {
                 slots.push({
                     ...sec.entries[i],
                     startTime: minToTime(lunchEndMin),
-                    endTime: minToTime(lunchEndMin + sec.slotDuration),
+                    endTime: minToTime(lunchEndMin + sec.presentDuration),
                     num: i + 1,
                     lunchBefore: { start: minToTime(currentTime), end: minToTime(lunchEndMin) }
                 });
-                currentTime = lunchEndMin + sec.slotDuration;
+                currentTime = lunchEndMin + slotTotal;
             } else {
                 slots.push({
                     ...sec.entries[i],
                     startTime: minToTime(currentTime),
-                    endTime: minToTime(currentTime + sec.slotDuration),
+                    endTime: minToTime(currentTime + sec.presentDuration),
                     num: i + 1
                 });
-                currentTime += sec.slotDuration;
+                currentTime += slotTotal;
             }
 
             /* ── 이 엔트리 뒤에 휴식이 있으면 삽입 ── */
@@ -1076,28 +1094,29 @@ function downloadTemplate() {
 function loadSampleData() {
     lastWorkbook = null;
     lastLeagueType = null;
-    const defSlot = parseInt(document.getElementById('defaultSlotMin').value) || 10;
+    const defPresent = parseInt(document.getElementById('defaultPresentMin').value) || 7;
+    const defTransition = parseInt(document.getElementById('defaultTransitionMin').value) || 3;
     sections = [
-        { name:'2부', slotDuration: defSlot, breaks: [], entries: [
+        { name:'2부', presentDuration: defPresent, transitionDuration: defTransition, breaks: [], entries: [
             {category:'인도',presenter:'차인준',method:'화상'},{category:'뉴욕',presenter:'김성은',method:'화상'},
             {category:'아시아',presenter:'최형옥',method:'화상'},{category:'영국',presenter:'임장혁',method:'화상'},
             {category:'호주',presenter:'김현지',method:'화상'}
         ]},
-        { name:'집중시장, 프로젝트, CS', slotDuration: defSlot, breaks: [], entries: [
+        { name:'집중시장, 프로젝트, CS', presentDuration: defPresent, transitionDuration: defTransition, breaks: [], entries: [
             {category:'미국법인 컨슈머',presenter:'변재혁',method:'화상'},{category:'중남미/중동아프리카',presenter:'박하영',method:''},
             {category:'강서(직영)지사',presenter:'이동우',method:''},{category:'BWA',presenter:'최민, 신희관',method:''},
             {category:'약국/건기식',presenter:'이영원, 장환호',method:''},{category:'W',presenter:'이동은',method:''},
             {category:'W',presenter:'양윤석',method:''},{category:'W',presenter:'이서환',method:''},
             {category:'CS',presenter:'이지훈',method:''}
         ]},
-        { name:'주재원, 3부', slotDuration: defSlot, breaks: [], entries: [
+        { name:'주재원, 3부', presentDuration: defPresent, transitionDuration: defTransition, breaks: [], entries: [
             {category:'아시아',presenter:'영호군',method:''},{category:'베트남법인',presenter:'김시현',method:'화상'},
             {category:'튀르키예법인',presenter:'하성봉',method:''},{category:'폴란드',presenter:'이용빈',method:''},
             {category:'스위스',presenter:'조배근',method:''},{category:'튀르키예법인',presenter:'민들레',method:''},
             {category:'베트남법인',presenter:'이상옥',method:'화상'},{category:'프랑스',presenter:'안영재',method:''},
             {category:'인도네시아',presenter:'이민지',method:''},{category:'필리핀',presenter:'권해선',method:''}
         ]},
-        { name:'4부(국내)', slotDuration: 5, breaks: [], entries: [
+        { name:'4부(국내)', presentDuration: 5, transitionDuration: 0, breaks: [], entries: [
             {category:'대학교',presenter:'김남국',method:''},{category:'인바디존',presenter:'최자은',method:''},
             {category:'국내 아파트 공용부',presenter:'천장훈',method:''},{category:'기업',presenter:'정명',method:''},
             {category:'BWA 국내',presenter:'윤혜린',method:''},{category:'대한체육회',presenter:'김명수',method:''}
