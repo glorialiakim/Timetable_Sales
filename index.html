@@ -296,6 +296,17 @@
             font-weight: bold;
             color: #666;
         }
+        .lunch-separator {
+            text-align: center;
+            padding: 14px 0;
+            font-size: 15px;
+            font-weight: bold;
+            color: #e65100;
+            background: #fff8f0;
+            border: 1px dashed #ffb74d;
+            border-radius: 6px;
+            margin: 10px 0;
+        }
         .actions-bar {
             display: flex;
             gap: 10px;
@@ -1039,31 +1050,57 @@ function renderOutput(computed) {
         const hasTopic = sec.slots.some(s => s.topic && s.topic.trim());
         const colCount = hasTopic ? 7 : 6;
         const breakColspan = hasTopic ? 4 : 3;
-        html += '<div class="tt-section"><table>';
-        html += `<tr class="${sec.colorClass}"><th colspan="${colCount}" style="font-size:13px;padding:6px;">${sec.name}</th></tr>`;
-        html += `<tr class="${sec.colorClass}">
-            <th style="width:36px">번호</th><th style="width:55px">시작</th><th style="width:55px">종료</th>
-            <th>구분</th>${hasTopic ? '<th>주제</th>' : ''}<th>발표자</th><th style="width:50px">방식</th></tr>`;
+
+        const tblOpen = () => {
+            let h = '<div class="tt-section"><table>';
+            h += `<tr class="${sec.colorClass}"><th colspan="${colCount}" style="font-size:13px;padding:6px;">${sec.name}</th></tr>`;
+            h += `<tr class="${sec.colorClass}">
+                <th style="width:36px">번호</th><th style="width:55px">시작</th><th style="width:55px">종료</th>
+                <th>구분</th>${hasTopic ? '<th>주제</th>' : ''}<th>발표자</th><th style="width:50px">방식</th></tr>`;
+            return h;
+        };
+        const tblClose = '</table></div>';
+
+        let isOpen = false;
 
         sec.slots.forEach(s => {
+            /* 점심 before → 표 끊고 점심 구분선 */
             if (s.lunchBefore) {
-                html += `<tr class="break-row"><td></td><td>${s.lunchBefore.start}</td><td>${s.lunchBefore.end}</td><td colspan="${breakColspan}">점심시간</td></tr>`;
+                if (isOpen) { html += tblClose; isOpen = false; }
+                html += `<div class="lunch-separator">점심시간 (${s.lunchBefore.start} ~ ${s.lunchBefore.end})</div>`;
             }
+
+            if (!isOpen) { html += tblOpen(); isOpen = true; }
+
+            /* 슬롯 행 */
             html += `<tr><td>${s.num}</td><td>${s.startTime}</td><td>${s.endTime}</td>
                 <td class="wrap-cell" style="text-align:left;padding-left:8px;">${s.category}</td>${hasTopic ? `<td class="wrap-cell" style="text-align:left;padding-left:8px;">${s.topic || ''}</td>` : ''}<td>${s.presenter}</td><td>${s.method}</td></tr>`;
+
+            /* 점심 after → 표 끊고 점심 구분선 */
             if (s.lunchAfter) {
-                html += `<tr class="break-row"><td></td><td>${s.lunchAfter.start}</td><td>${s.lunchAfter.end}</td><td colspan="${breakColspan}">점심시간</td></tr>`;
+                html += tblClose; isOpen = false;
+                html += `<div class="lunch-separator">점심시간 (${s.lunchAfter.start} ~ ${s.lunchAfter.end})</div>`;
             }
+
+            /* 쉬는시간은 표 안에 유지 */
             if (s.breakAfter) {
+                if (!isOpen) { html += tblOpen(); isOpen = true; }
                 html += `<tr class="break-row"><td></td><td>${s.breakAfter.start}</td><td>${s.breakAfter.end}</td><td colspan="${breakColspan}">쉬는시간</td></tr>`;
             }
         });
 
+        /* 섹션 갭 처리 */
         if (sec.hasBreak) {
-            const breakLabel = sec.isLunch ? '점심시간' : '쉬는시간';
-            html += `<tr class="break-row"><td></td><td>${sec.breakStart}</td><td>${sec.breakEnd}</td><td colspan="${breakColspan}">${breakLabel}</td></tr>`;
+            if (sec.isLunch) {
+                if (isOpen) { html += tblClose; isOpen = false; }
+                html += `<div class="lunch-separator">점심시간 (${sec.breakStart} ~ ${sec.breakEnd})</div>`;
+            } else {
+                if (!isOpen) { html += tblOpen(); isOpen = true; }
+                html += `<tr class="break-row"><td></td><td>${sec.breakStart}</td><td>${sec.breakEnd}</td><td colspan="${breakColspan}">쉬는시간</td></tr>`;
+            }
         }
-        html += '</table></div>';
+
+        if (isOpen) { html += tblClose; }
     });
 
     html += '</div>';
