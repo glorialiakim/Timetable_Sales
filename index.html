@@ -263,7 +263,7 @@
         }
         .timetable-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 1fr;
             gap: 20px;
             align-items: start;
         }
@@ -278,6 +278,10 @@
             padding: 4px 7px;
             text-align: center;
             white-space: nowrap;
+        }
+        .tt-section td.wrap-cell {
+            white-space: normal;
+            word-break: break-word;
         }
         .tt-section th { font-weight: bold; font-size: 12px; }
         .tt-section td { font-size: 12px; }
@@ -325,7 +329,6 @@
             @page { size: landscape; margin: 15mm; }
         }
         @media (max-width: 768px) {
-            .timetable-grid { grid-template-columns: 1fr; }
             .settings-grid { grid-template-columns: 1fr 1fr; }
         }
     </style>
@@ -1029,7 +1032,7 @@ function renderOutput(computed) {
                 html += `<tr class="break-row"><td></td><td>${s.lunchBefore.start}</td><td>${s.lunchBefore.end}</td><td colspan="${breakColspan}">점심시간</td></tr>`;
             }
             html += `<tr><td>${s.num}</td><td>${s.startTime}</td><td>${s.endTime}</td>
-                <td style="text-align:left;padding-left:8px;">${s.category}</td>${hasTopic ? `<td style="text-align:left;padding-left:8px;">${s.topic || ''}</td>` : ''}<td>${s.presenter}</td><td>${s.method}</td></tr>`;
+                <td class="wrap-cell" style="text-align:left;padding-left:8px;">${s.category}</td>${hasTopic ? `<td class="wrap-cell" style="text-align:left;padding-left:8px;">${s.topic || ''}</td>` : ''}<td>${s.presenter}</td><td>${s.method}</td></tr>`;
             if (s.lunchAfter) {
                 html += `<tr class="break-row"><td></td><td>${s.lunchAfter.start}</td><td>${s.lunchAfter.end}</td><td colspan="${breakColspan}">점심시간</td></tr>`;
             }
@@ -1104,7 +1107,7 @@ function loadSampleData() {
     autoGenerate();
 }
 
-/* ── 엑셀 내보내기 (ExcelJS - 색상/테두리/2열 레이아웃) ── */
+/* ── 엑셀 내보내기 (ExcelJS - 색상/테두리/1열 레이아웃) ── */
 async function exportToExcel() {
     if (!lastComputed.length) { alert('먼저 시간표를 생성하세요.'); return; }
     if (typeof ExcelJS === 'undefined') { alert('ExcelJS 로딩 중입니다. 잠시 후 다시 시도하세요.'); return; }
@@ -1117,19 +1120,17 @@ async function exportToExcel() {
 
     const hasTopic = lastComputed.some(sec => sec.slots.some(s => s.topic && s.topic.trim()));
     const colsPerSec = hasTopic ? 7 : 6;
-    const rightStart = colsPerSec + 2;
-    const totalCols = colsPerSec * 2 + 1;
 
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('시간표', { views:[{showGridLines:false}] });
 
     if (hasTopic) {
-        [5.5,8,8,16,16,13,7, 3, 5.5,8,8,16,16,13,7].forEach((w,i) => { ws.getColumn(i+1).width = w; });
+        [5.5,8,8,22,22,13,7].forEach((w,i) => { ws.getColumn(i+1).width = w; });
     } else {
-        [5.5,8,8,20,13,7, 3, 5.5,8,8,20,13,7].forEach((w,i) => { ws.getColumn(i+1).width = w; });
+        [5.5,8,8,24,13,7].forEach((w,i) => { ws.getColumn(i+1).width = w; });
     }
 
-    ws.mergeCells(1,1,1,totalCols);
+    ws.mergeCells(1,1,1,colsPerSec);
     const tc = ws.getCell(1,1);
     tc.value = `${dateStr} ${leagueLabel} 명단`;
     tc.font = { bold:true, size:16 };
@@ -1137,13 +1138,9 @@ async function exportToExcel() {
     ws.getRow(1).height = 30;
 
     let curRow = 3;
-    for (let p = 0; p < lastComputed.length; p += 2) {
-        const leftH  = writeSectionBlock(ws, lastComputed[p], curRow, 1, COLORS, allBorders, hasTopic);
-        let rightH = 0;
-        if (p+1 < lastComputed.length) {
-            rightH = writeSectionBlock(ws, lastComputed[p+1], curRow, rightStart, COLORS, allBorders, hasTopic);
-        }
-        curRow += Math.max(leftH, rightH) + 2;
+    for (let p = 0; p < lastComputed.length; p++) {
+        const h = writeSectionBlock(ws, lastComputed[p], curRow, 1, COLORS, allBorders, hasTopic);
+        curRow += h + 1;
     }
 
     const buf = await wb.xlsx.writeBuffer();
