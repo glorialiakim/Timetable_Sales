@@ -628,6 +628,7 @@ let breakDurations = [10, 10];
 let lastComputed = [];
 let lastWorkbook = null;
 let lastLeagueType = null;
+let openDetails = new Set();
 
 /* ── 가이드 모달 ── */
 function openGuide() { document.getElementById('guideOverlay').classList.add('open'); }
@@ -860,7 +861,7 @@ function renderSectionConfig() {
                         <button class="btn btn-danger btn-sm" onclick="removeSection(${idx})">삭제</button>
                     </div>
                 </div>
-                <div class="section-detail" id="detail${idx}">
+                <div class="section-detail ${openDetails.has(idx)?'open':''}" id="detail${idx}">
                     <div class="section-settings-row">
                         <div class="field">
                             <label>섹션명</label>
@@ -1040,6 +1041,8 @@ function calcScheduleInfo() {
 }
 
 function toggleDetail(idx) {
+    if (openDetails.has(idx)) openDetails.delete(idx);
+    else openDetails.add(idx);
     const el = document.getElementById('detail' + idx);
     el.classList.toggle('open');
 }
