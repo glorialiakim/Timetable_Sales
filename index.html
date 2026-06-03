@@ -728,6 +728,10 @@ function renderSectionConfig() {
                                     <span style="color:#888">${e.method}</span>
                                 </div>
                                 <div style="display:flex; gap:4px; align-items:center;">
+                                    <div class="move-btns">
+                                        <button onclick="moveEntry(${idx},${ei},-1)" ${ei===0?'disabled':''}>&#9650;</button>
+                                        <button onclick="moveEntry(${idx},${ei},1)" ${ei===sec.entries.length-1?'disabled':''}>&#9660;</button>
+                                    </div>
                                     ${!brk ? `<button class="add-break-btn" title="이 뒤에 휴식 추가" onclick="addSectionBreak(${idx},${ei})">☕+</button>` : ''}
                                     <button style="background:none;border:none;cursor:pointer;color:#999;font-size:14px;"
                                         onclick="sections[${idx}].entries.splice(${ei},1); sections[${idx}].breaks=sections[${idx}].breaks.filter(b=>b.afterEntry!==${ei}).map(b=>b.afterEntry>${ei}?{...b,afterEntry:b.afterEntry-1}:b); renderSectionConfig();">x</button>
@@ -883,6 +887,14 @@ function addEntry(idx) {
     const meth = document.getElementById('aM'+idx).value.trim();
     if (!pres && !cat) return;
     sections[idx].entries.push({ category: cat, topic, presenter: pres, method: meth });
+    renderSectionConfig();
+}
+
+function moveEntry(sIdx, eIdx, dir) {
+    const entries = sections[sIdx].entries;
+    const t = eIdx + dir;
+    if (t < 0 || t >= entries.length) return;
+    [entries[eIdx], entries[t]] = [entries[t], entries[eIdx]];
     renderSectionConfig();
 }
 
